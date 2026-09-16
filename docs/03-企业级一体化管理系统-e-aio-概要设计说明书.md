@@ -206,7 +206,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 
 #### 2.4.4 数据访问边界
 
-- 模块数据库 Schema 独立；ORM（JPA/MyBatis）限定本模块实体扫描范围。
+- 模块数据库 Schema 独立；持久层以 MyBatis-Plus 为主（承接 RuoYi 蓝本），限定本模块 Mapper / 实体扫描范围。
 - 跨模块查询（如客户 360 视图）通过聚合服务在应用层多次调用各模块 API 组装，或通过**只读视图/数仓**实现，不跨 Schema 直查。
 
 ### 2.5 关键技术设计决策
@@ -226,6 +226,41 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 | AI | Spring AI 网关 + RAG（pgvector）+ Agent 编排 | 多模型接入、成本可控 |
 
 ---
+
+### 2.6 实现蓝本：基于 RuoYi（Apache-2.0）重写
+
+为加速平台底座落地，e-aio **以 RuoYi-Vue 为代码蓝本**（Apache-2.0 许可，可合规复用），在保留其成熟系统管理功能集的前提下，用 **Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体**。RuoYi 官方 master 分支已基于 Spring Boot 4.x（JDK 17+），与 e-aio 技术基线一致，可平滑移植并模块化改造。
+
+#### 2.6.1 RuoYi → e-aio 模块映射
+
+| RuoYi 模块 | RuoYi 功能 | e-aio Modulith 模块 | 改造要点 |
+|-----------|-----------|---------------------|----------|
+| ruoyi-common | 常量、AjaxResult/BaseEntity、核心工具、Redis 工具、安全工具、注解 | common | 工具下沉 common；注解与 AOP 基类归 platform |
+| ruoyi-framework | SecurityConfig、JWT、拦截器、AOP（操作日志/防重）、Web 配置 | security + audit + platform | 认证授权归 security；操作日志归 audit；拦截器/配置归 platform |
+| ruoyi-system | 用户 / 角色 / 菜单 / 权限 | security | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
+| ruoyi-system | 部门 / 岗位 | org | 组织树升级为无限级（集团-子公司-部门） |
+| ruoyi-system | 字典 / 参数 / 公告 | platform | 保留并扩展分级配置 |
+| ruoyi-system | 操作日志 / 登录日志 | audit | 升级为 WORM 防篡改双审计 |
+| ruoyi-quartz | 定时任务 | platform（Scheduler） | Spring Task + ShedLock，保留 Quartz 可选 |
+| ruoyi-generator | 代码生成 | devtools（开发工具链） | 服务 Vibe Coding，不入运行时 |
+| ruoyi-ui | Vue 管理界面 | portal + 前端工程 | 保留菜单/权限前端框架，扩展配置化渲染 |
+
+#### 2.6.2 重写技术要点
+
+| 主题 | RuoYi 现状 | e-aio 重写方案 |
+|------|-----------|----------------|
+| 架构形态 | 经典单体（多 Maven 模块，运行时单进程） | Spring Modulith 模块化单体：模块边界 + 公共 API + 事件解耦，ArchUnit 校验 |
+| 持久层 | MyBatis / MyBatis-Plus + Druid | 保留 MyBatis-Plus（PostgreSQL 适配），模块级 Mapper 限定本模块 Schema |
+| 认证授权 | Spring Security + JWT + Redis | security 模块：保留 JWT/SSO 能力，扩展母子公司多级权限、数据权限、SoD |
+| 审计 | 操作日志（AOP + 表） | audit 模块：升级 WORM 防篡改 + 财务专项审计双体系 |
+| 定时任务 | Quartz | platform Scheduler：Spring Task + ShedLock 分布式锁，Quartz 可选保留 |
+| 代码生成 | ruoyi-generator | 保留为开发工具（devtools），辅助 Vibe Coding 生成模块骨架 |
+| 前端 | Vue + Element | portal：保留菜单/路由/权限指令，扩展配置化渲染与移动端 |
+
+#### 2.6.3 复用边界（许可证与合规）
+
+- RuoYi-Vue 采用 **Apache-2.0** 许可证，代码可自由复用、修改、分发；e-aio 继续采用 Apache-2.0，保留原版权声明与 LICENSE 即可合规。
+- 重写过程以"模块迁移 + 能力增强"为原则：**优先复用 RuoYi 成熟实现（系统管理、认证、字典、日志），叠加 e-aio 差异化能力（母子公司权限、双审计、主数据、AI）**，避免从零重复造轮子。
 
 ## 3. 接口设计
 
