@@ -241,6 +241,7 @@
 | 工作流 | Flowable（开源，Apache-2.0）二次封装 |
 | 构建/CI | Maven/Gradle（开源）+ GitHub Actions |
 | 安全 | Spring Security（开源）+ 自研多级组织权限引擎 + 审计框架 |
+| API 对接 | RESTful 风格，统一 POST + JSON（含查询/删除/导出） |
 
 ### 3.3 开发范式：纯 Vibe Coding
 

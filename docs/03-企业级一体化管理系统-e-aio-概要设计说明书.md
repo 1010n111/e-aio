@@ -263,13 +263,30 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 - RuoYi-Vue 采用 **Apache-2.0** 许可证，代码可自由复用、修改、分发；e-aio 继续采用 Apache-2.0，保留原版权声明与 LICENSE 即可合规。
 - 重写过程以"模块迁移 + 能力增强"为原则：**优先复用 RuoYi 成熟实现（系统管理、认证、字典、日志），叠加 e-aio 差异化能力（母子公司权限、双审计、主数据、AI）**，避免从零重复造轮子。
 
+#### 2.6.4 API 对接约定（统一 POST + JSON）
+
+前后端与外部集成统一采用 **RESTful 风格 API，全部接口使用 POST 方法 + JSON body**（含查询/删除/导出），以降低多方法语义带来的客户端封装复杂度：
+
+| 维度 | 约定 |
+|------|------|
+| 协议 | HTTP/HTTPS，统一 POST，`Content-Type: application/json` |
+| URL 风格 | `/api/<module>/<resource>/<action>` 动词化路径（如 `POST /api/crm/customer/page`、`POST /api/crm/customer/create`、`POST /api/crm/customer/delete`） |
+| 请求体 | 全部参数（条件/分页/排序/ID 等）置于 JSON body，查询与写操作一致 |
+| 响应体 | 统一 `Result<T>`（code/message/data/traceId）；分页统一 `PageResult<T>` |
+| 鉴权 | `Authorization: Bearer <JWT>` 请求头（不因 POST 变化） |
+| 幂等 | 写接口携带幂等键（`Idempotency-Key` 头或业务单号字段），支撑防重（NFR-REL-03） |
+| 例外 | 文件上传走 multipart/form-data、文件下载走二进制流，不在 JSON 约定内 |
+| 文档 | OpenAPI 3.x 统一标注 POST；网关限流/日志/审计按路径维度 |
+
+> **理由**：统一 POST + JSON 简化前端单一封装、规避 QueryString 编码与长度问题、便于网关统一过滤与审计；代价是非标准 REST 语义（缓存/幂等需显式处理），由幂等键与统一错误码兜底。
+
 ## 3. 接口设计
 
 ### 3.1 外部接口
 
 | 接口 | 协议 | 说明 | 关联模块 |
 |------|------|------|----------|
-| OpenAPI | RESTful JSON（OpenAPI 3.x 文档） | 第三方 / 二次开发集成；鉴权（OAuth2 Client Credentials / API Key）、限流、日志 | integration |
+| OpenAPI | RESTful（统一 POST + JSON，OpenAPI 3.x 文档） | 第三方 / 二次开发集成；鉴权（OAuth2 Client Credentials / API Key）、限流、日志 | integration |
 | Webhook | HTTPS POST + 签名（HMAC-SHA256） | 业务事件推送外部系统，重试 + 幂等 | integration |
 | 大模型 API | OpenAI 兼容协议 | 接入企业自有或第三方大模型（可配多个） | ai |
 | SSO/LDAP | SAML2 / OIDC / LDAP | 企业统一身份认证对接 | security |

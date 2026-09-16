@@ -71,6 +71,7 @@
 | **AI**         | 开源大模型网关（Spring AI / LangChain4j / LiteLLM）+ RAG + Agent + 向量库 pgvector |
 | **权限**         | Spring Security（开源）+ 自研多级组织权限引擎                                        |
 | **构建 / CI**    | Maven/Gradle（开源）+ GitHub Actions                                       |
+| **API 对接**    | RESTful 风格，统一 POST + JSON（含查询/删除/导出）
 
 > **开源优先原则**
 >
