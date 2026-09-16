@@ -102,7 +102,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                      接入层（Presentation）                  │
-│  Web 门户（Vue3/React + 配置化渲染） │ 移动端 │ OpenAPI │ Webhook │
+│  Web 门户（Vue3 + Vite + Element Plus（配置化渲染）） │ 移动端 │ OpenAPI │ Webhook │
 ├────────────────────────────────────────────────────────────┤
 │                    通用能力层（平台统一提供）                    │
 │  OA │ CRM │ 库存 │ 财务 │ HRM │ 项目 │ 供应链 │ 营销 │ 售后 │ 资金 │
@@ -818,6 +818,10 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | Spring Security + OAuth2 | 认证授权 | Apache-2.0 |
 | PostgreSQL + pgvector | 主库 / 向量 | PostgreSQL |
 | Redis | 缓存 / 会话 / 锁 | BSD-3 |
+| MyBatis-Plus | 持久层（承接 RuoYi 蓝本） | Apache-2.0 |
+| HikariCP / Druid | 数据库连接池 | Apache-2.0 |
+| Vue3 + Vite + Element Plus | 前端工程（RuoYi-Vue3 蓝本） | MIT |
+| jjwt / Nimbus JOSE | JWT 令牌 | Apache-2.0 |
 | OpenSearch | 全文检索 | Apache-2.0 |
 | ClickHouse | 数仓 / BI | Apache-2.0 |
 | Flowable | 工作流引擎 | Apache-2.0 |
