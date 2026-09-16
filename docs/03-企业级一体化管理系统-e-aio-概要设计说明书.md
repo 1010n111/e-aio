@@ -314,7 +314,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | workflow | `ProcessApi`（发起/流转/催办/撤回）、`FormApi`（表单绑定） | 全部业务模块 |
 | approval | `ApprovalApi`（统一审批中心聚合） | 全部业务模块 |
 | mdm | `MasterDataApi`（主数据读写/查重/审批）、`MdEvent`（变更事件） | 全部业务模块 |
-| platform | `DictApi`、`FileApi`、`ParamApi`、`SchedulerApi`、`ExcelApi`、`CacheApi` | 全部模块 |
+| platform | `DictApi`、`FileApi`（统一文件上传/下载）、`ParamApi`、`SchedulerApi`、`ExcelApi`、`CacheApi` | 全部模块 |
 | report | `ReportApi`（报表取数/看板） | 全部模块 |
 | ai | `AiGatewayApi`（模型调用）、`RagApi`（问答）、`OcrApi` | 全部模块 |
 | finance | `AccountApi`（科目）、`VoucherApi`（凭证生成） | crm、inventory、scm、hr、fund |
@@ -442,7 +442,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | OpenSearch | 全文检索（知识库/文档/工单/日志检索） | 事件驱动同步，近实时 |
 | ClickHouse | BI 报表、审计分析、大查询 | 事件驱动同步 + 预聚合表 |
 | pgvector（PostgreSQL 扩展） | RAG 向量检索 | 文档/知识切片向量化 |
-| 对象存储（MinIO/S3） | 文件、附件、导出产物 | 预签名 URL 访问，权限控制 |
+| 对象存储（MinIO/S3） | 文件、附件、导出产物 | 统一经 platform `FileApi` 访问（预签名 URL + 权限 + 审计） |
 
 ### 4.4 数据一致性策略
 
@@ -549,7 +549,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **Excel 导入导出**：Apache Fesod 流式读写（10 万+行）；模板管理、字段校验、错误回显、异步导入任务 + 进度。
 - **缓存管理**：Caffeine（本地）+ Redis（分布式）两级缓存；缓存键规范与变更失效事件；穿透/击穿/雪崩防护（空值缓存、互斥重建、随机过期）。
 - **系统监测**：Actuator 指标 → Prometheus 采集 → Grafana 看板；日志（结构化）+ 链路（Micrometer Tracing）；告警规则（内存/线程/慢 SQL/任务失败）。
-- **文件存储**：对象存储适配（MinIO/S3/本地盘），预签名 URL，文件权限与审计。
+- **文件存储（统一文件能力中心）**：全系统统一文件上传/下载入口 `FileApi`，业务模块只经 `FileApi` 引用文件、**不自行管理文件存储**；对象存储适配（MinIO/S3/本地盘），预签名 URL（带时效），文件权限（复用 security 数据权限）与审计（audit 留痕）；文件上传走 multipart/form-data、下载走二进制流（2.6.4 例外约定）。
 - **对外**：`DictApi`、`FileApi`、`ParamApi`、`SchedulerApi`、`ExcelApi`、`CacheApi`、`MonitorApi`。
 
 ### 5.8 report（报表 BI）— 平台底座
