@@ -814,7 +814,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | platform | — | 全部模块 |
 | report | security、audit | 全部模块 |
 | ai | security、audit、platform | oa、crm、service 等 |
-| oa | security、org、audit、platform、ai | portal |
+| oa | security、org、audit、platform、ai（可选渐进） | portal |
 | crm | security、mdm、workflow、audit、finance、platform | marketing、service |
 | inventory | security、mdm、audit、finance | scm、crm、service |
 | finance | security、mdm、audit、workflow、fund、platform | crm、inventory、scm、hr、fund |
@@ -912,7 +912,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | P1 平台底座 | 6 | audit（操作审计，WORM 防篡改） | security、org、platform | M4–M6 |
 | P1 平台底座 | 7 | workflow + approval（工作流与统一审批中心） | security、audit、platform、org | M5–M8 |
 | P1 平台底座 | 8 | mdm（主数据管理） | security、org、audit、workflow | M6–M8 |
-| P1 平台底座 | 9 | oa（OA 协同，首个业务模块验证） | 平台底座全部 | M7–M9 |
+| P1 平台底座 | 9 | oa（OA 协同，首个业务模块验证） | security、org、audit、platform（ai 可选渐进） | M7–M9 |
 | P1 平台底座 | 10 | portal（门户收口：菜单/待办聚合/消息） | security、approval、oa、platform | M8–M9 |
 | P2 业务闭环 | 11 | report（报表 BI） | security、audit | M9–M12 |
 | P2 业务闭环 | 12 | project（项目管理） | security、org、audit、workflow | M9–M12 |
@@ -931,6 +931,11 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | P3 平台化开放 | 25 | 行业业务模块（按企业定制） | 通用能力层全部 | M28–M36 |
 
 > **说明**：finance ↔ fund 存在接口级相互依赖（凭证↔收付款核销），按"契约先行"处理——先冻结 `VoucherApi` / `PaymentApi` 契约，双方并行实现，运行时经公共 API 调用，不构成包级循环。
+
+> **说明**：oa 对 ai 为**可选渐进依赖**——AI PoC 于阶段 0（M0–M2）验证，ai 完整模块在 P2（顺序 20）落地；MVP 阶段 oa 可无 AI 运行，接口层预留 ai 调用位，P2 后渐进接入（RAG / OCR / 智能审单）。
+
+> **说明**：行业业务模块（顺序 25）为**扩展模块**，不在 11.1 固定依赖矩阵内，依赖通用能力层全部，按企业定制落地。
+
 
 #### 13.2.1 RuoYi 蓝本改造落点（对应 2.6.1 模块映射）
 
