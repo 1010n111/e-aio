@@ -85,7 +85,7 @@
 
 本项目**不采用微服务架构**，采用 **Spring Modulith 模块化单体**：
 
-* **基于 RuoYi 蓝本**：以 RuoYi-Vue 前后端分离版（Apache-2.0）为代码蓝本，后端用 Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体，前端基于 RuoYi-Vue3（Vue3 + Vite + Element Plus），叠加母子公司权限 / 双审计 / 主数据 / AI
+* **基于 RuoYi 蓝本**：以 RuoYi-Vue 前后端分离版（MIT）为代码蓝本，后端用 Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体，前端基于 RuoYi-Vue3（Vue3 + Vite + Element Plus），叠加母子公司权限 / 双审计 / 主数据 / AI
 * **模块边界**：按业务域划分模块（`oa`、`crm`、`inventory`、`finance`、`workflow`、`audit`、`security`、`approval`、`ai`、`hr`、`project`、`scm`、`report`、`portal`、`mdm`、`marketing`、`service`、`fund`、`integration`、`mobile`、`i18n`），模块间通过明确公共 API 交互
 * **业务模块调用通用能力**：业务模块（按企业定制）单向调用通用能力（流程 / 权限 / 审计 / 报表 / AI 等），依赖方向为"业务模块 → 通用能力"，禁止反向依赖
 

@@ -63,7 +63,7 @@
 4. Spring Boot 4.1.x 官方文档
 5. Spring Modulith 2.1.x 官方文档
 6. Apache Fesod 官方文档（https://fesod.apache.org/zh-cn/docs/）
-7. RuoYi-Vue 官方文档（Apache-2.0，前后端分离版）
+7. RuoYi-Vue 官方文档（MIT，前后端分离版）
 
 ---
 
