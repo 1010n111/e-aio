@@ -904,7 +904,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 | 批次 | 顺序 | 模块 | 前置依赖（来自 11.1） | 里程碑 |
 |------|------|------|----------------------|--------|
-| P0 工程地基 | 1 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体） | 无 | M0–M1 |
+| P0 工程地基 | 1 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体；迁移 ruoyi-common 工具集） | 无 | M0–M1 |
 | P0 工程地基 | 2 | 工程骨架（以 RuoYi-Vue 为蓝本初始化：Modulith 命名空间 + ArchUnit 质量门 + Flyway + CI 流水线 + 统一异常/错误码） | common | M0–M1 |
 | P1 平台底座 | 3 | platform（参数/字典/文件/定时任务/Excel/缓存/监测） | common | M1–M3 |
 | P1 平台底座 | 4 | org（组织与用户） | platform | M2–M4 |
@@ -936,7 +936,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 | 批次 | 顺序 | 改造内容（RuoYi 模块 → e-aio 模块） | 说明 |
 |------|------|--------------------------------------|------|
-| P0 | 2 工程骨架 | ruoyi-common / ruoyi-framework → 工程骨架初始化 | 以 RuoYi-Vue（前后端分离版）为蓝本搭建：Maven 多模块改造为 Modulith 命名空间、依赖基线（Spring Boot 4.x）、`AjaxResult`/`BaseEntity` → `Result<T>`/`PageResult<T>`、统一异常与错误码迁移；前端 RuoYi-Vue3 工程同步初始化 |
+| P0 | 1 common | ruoyi-common → common | 迁移 ruoyi-common 工具集：AjaxResult/BaseEntity → Result<T>/PageResult<T>、核心工具（StringUtils/DateUtils/JsonUtils/树形/脱敏/雪花ID）、Redis 工具、安全工具、注解基类；改造为 e-aio 薄封装门面 |
+| P0 | 2 工程骨架 | ruoyi-framework（基础部分）→ 工程骨架 | 以 RuoYi-Vue（前后端分离版）为蓝本搭建：Maven 多模块改造为 Modulith 命名空间、依赖基线（Spring Boot 4.x）、统一异常与错误码、CI 质量门；前端 RuoYi-Vue3 工程同步初始化 |
 | P1 | 3 platform | ruoyi-system（字典/参数/公告）+ ruoyi-quartz → platform | 字典/参数/公告迁移并扩展分级配置；Quartz → Spring Task + ShedLock（Quartz 可选保留） |
 | P1 | 4 org | ruoyi-system（sys_user 用户/部门/岗位）→ org | 用户主档、部门/岗位迁移；组织树升级为无限级（集团-子公司-部门） |
 | P1 | 5 security | ruoyi-framework（SecurityConfig/JWT/拦截器）+ ruoyi-system（角色/菜单/权限）→ security | 认证授权迁移；扩展母子公司多级组织权限（组织树/数据权限/SoD） |
