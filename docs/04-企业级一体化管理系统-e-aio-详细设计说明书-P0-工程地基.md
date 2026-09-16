@@ -81,23 +81,30 @@ P0 目标是搭建**可运行、可验证、可扩展**的工程地基，交付�
 | 架构测试 | ArchUnit 规则集 + Modulith verify | 10.1 |
 | CI 流水线 | GitHub Actions 编译/测试/架构/安全/构建 | 10.3 |
 
-### 2.2 P0 工程结构总览（后端）
+### 2.2 P0 工程结构总览（前后端分离）
+
+**前后端分离架构**：后端工程与前端工程分离——后端只暴露 RESTful API（统一 POST + JSON），前端独立构建（Vite）、独立部署（Nginx/静态托管）；开发期经 Vite 代理联调。与 RuoYi-Vue（前后端分离版）蓝本结构一致。
 
 ```
-e-aio/
-├── pom.xml                      # 父 POM（依赖管理 BOM）
-├── e-aio-app/                   # 启动模块（Spring Boot 可执行 Jar）
+e-aio/                                # 主仓库（后端 Maven 多模块 + 前端工程目录）
+├── pom.xml                           # 父 POM（依赖管理 BOM）
+├── e-aio-app/                        # 启动模块（Spring Boot 可执行 Jar）
 │   └── src/main/java/com/eaio/EaioApplication.java
-├── e-aio-common/                # common 技术底座（顺序 2）
+├── e-aio-common/                     # common 技术底座（顺序 2）
 │   └── src/main/java/com/eaio/common/
-├── e-aio-platform/              # 模块平铺于根目录（P1 顺序 3 预留，父 POM 同步登记）
-└── ...                          # P1–P3 按队列顺序新增 e-aio-<module>├── e-aio-web/                   # 前端工程（RuoYi-Vue3 蓝本，独立目录）
-│   └── src/...
-├── .github/workflows/ci.yml     # CI 流水线
-└── docs/                        # 工程文档
+├── e-aio-platform/                   # 模块平铺于根目录（P1 顺序 3 预留，父 POM 同步登记）
+└── …                                 # P1–P3 按队列顺序新增 e-aio-<module>
+├── web/                              # 前端独立工程（RuoYi-Vue3 蓝本，前后端分离）
+│   ├── src/…                         # 见 3.1.4
+│   ├── vite.config.js                # 开发代理 → 后端 API；生产独立部署
+│   └── package.json                  # 独立依赖与构建脚本（与后端 Maven 无关）
+├── .github/workflows/ci.yml          # CI 流水线（后端/前端独立 Job，见 3.8）
+└── docs/                             # 工程文档
 ```
 
 > **命名说明**：Maven artifactId 前缀 `e-aio-`，模块根包统一 `com.eaio.<module>`。**P0 只创建 `e-aio-app` 与 `e-aio-common`**，业务模块目录在 P1 启动时按顺序新增，父 POM 模块清单同步维护。
+>
+> **前端工程边界**：`web/` 为独立 npm 工程（不参与 Maven 构建），独立版本管理；如需独立仓库协作，可将 `web/` 整体拆分为 `e-aio-web` 仓库（与 RuoYi-Vue3 独立前端仓库一致），后端仅依赖其 API 契约。
 
 ### 2.3 P0 与后续阶段的关系
 
@@ -137,7 +144,8 @@ e-aio/
 | lombok | 样板代码生成 | MIT |
 | hutool-all | 工具库底座 | MPL-2.0 |
 | mapstruct + mapstruct-processor | DTO 映射 | Apache-2.0 |
-| mybatis-plus-spring-boot3-starter | 持久层（P0 仅引入占位，P1 启用；Boot 4 对应 starter 版本 P1 落地时确认） | Apache-2.0 || flyway-core + flyway-database-postgresql | 数据库迁移 | Apache-2.0 |
+| mybatis-plus-spring-boot3-starter | 持久层（P0 仅引入占位，P1 启用；Boot 4 对应 starter 版本 P1 落地时确认） | Apache-2.0 |
+| flyway-core + flyway-database-postgresql | 数据库迁移 | Apache-2.0 |
 | postgresql | JDBC 驱动 | PostgreSQL |
 | spring-boot-starter-data-redis | Redis 基础 | Apache-2.0 |
 | redisson-spring-boot-starter | 分布式锁 / 限流 / 队列（RedisKit 底层） | Apache-2.0 |
@@ -440,6 +448,55 @@ export const customerApi = {
 ```
 
 例外：文件上传走 `multipart/form-data`（`FileApi/Upload`），下载走二进制流（`FileApi/Download`），由 platform 的 `FileApi` 专用封装（P1 落地）。
+
+### 3.10 从 RuoYi-Vue 蓝本改造实施步骤（落地指南）
+
+> 本节将 HLD 13.2.1"RuoYi 蓝本改造落点"落实为 **P0 可执行步骤**，指导从 `RuoYi-Vue`（后端）与 `RuoYi-Vue3`（前端）两个开源工程改造为 e-aio 工程骨架。改造原则：**保留成熟实现、按模块迁移、删除无关部分、叠加 e-aio 差异化能力**（HLD 2.6.3）。
+
+#### 3.10.1 改造策略总览
+
+| 分类 | RuoYi 内容 | e-aio 处置 |
+|------|-----------|-----------|
+| 保留（迁移） | ruoyi-common 工具集、ruoyi-framework 基础（Security/JWT/拦截器/全局异常）、RuoYi-Vue3 前端工程、字典/参数/日志基础实现 | 按 3.10.2 步骤迁移，包名/命名空间重写 |
+| 改造 | AjaxResult/BaseEntity → `Result<T>`/`PageResult<T>`；操作日志 → 双审计（P1）；Quartz → Spring Task+ShedLock（P1）；API → 统一 POST + JSON | 见 3.2、3.5、3.6、3.9 |
+| 删除/隔离 | ruoyi-generator（→ devtools 不入运行时）、ruoyi-admin 直连入口、RuoYi 前端直连后端配置、非 P0 的 system 业务表 | 移出 P0 父 POM / 前端移除，P1 按模块重建 |
+| 合规 | RuoYi 版权声明与 LICENSE（MIT） | 保留原版权与 LICENSE 文件（HLD 2.6.3） |
+
+#### 3.10.2 实施步骤（P0）
+
+| 步骤 | 动作 | 涉及内容 | 输出 / 验收 |
+|------|------|----------|-------------|
+| 0 | 准备：clone `RuoYi-Vue` 与 `RuoYi-Vue3` 至临时目录；确认 MIT LICENSE 保留 | 两个上游工程 | 改造基线版本号记录 |
+| 1 | 建立 e-aio 父 POM 骨架：`groupId=com.eaio`、`artifactId=e-aio`、`<modules>` 仅含 `e-aio-app`、`e-aio-common`；引入 3.1.2 依赖基线 | 新建 `pom.xml` | `mvn -B compile` 通过 |
+| 2 | 迁移 ruoyi-common → e-aio-common：全量拷贝工具类，包名 `com.ruoyi.common` → `com.eaio.common`；`AjaxResult`→`Result<T>`、`BaseEntity`→`PageResult<T>` 配套改造；删 RuoYi 私有业务常量 | ruoyi-common | 第 4 章工具门面清单落位 |
+| 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 security 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/health` 可用 |
+| 4 | ruoyi-system 拆分登记：用户/部门/岗位 → org（P1）；角色/菜单/权限 → security（P1）；字典/参数/公告 → platform（P1）；操作日志/登录日志 → audit（P1）。**P0 不搬入**，仅冻结契约 | ruoyi-system | 契约清单（6.3 待 P1 细化事项） |
+| 5 | ruoyi-quartz 保留为 platform Scheduler 蓝本（P1 迁移 Spring Task + ShedLock）；**P0 移出父 POM** | ruoyi-quartz | 父 POM 无 quartz |
+| 6 | ruoyi-generator → devtools：**P0 不搬入**，登记为 Vibe Coding 开发工具链（HLD 13.2.1） | ruoyi-generator | 运行时零残留 |
+| 7 | 建立 Modulith 命名空间与 ArchUnit：按 3.1.3 分包、3.7 规则集接入，`ApplicationModules.verify()` 纳入测试 | e-aio-app/e-aio-common | 架构测试 0 违例 |
+| 8 | API 风格改造契约：全局统一 POST + JSON + 动作词（Get/Add/Up/Del/业务动作）；`springdoc` 标注 POST；幂等键头约定（3.2.5） | 全后端 | 3.9 前端封装按此对接 |
+| 9 | Flyway 迁移骨架接入：替换 RuoYi 的 SQL 脚本直连初始化方式（`sql/` 目录），改由 3.6 多 Schema 迁移管理 | 数据库初始化 | 空库迁移通过 |
+| 10 | CI 流水线：按 3.8 搭建 GitHub Actions（后端 Maven Job + 前端 npm Job 独立） | `.github/workflows/ci.yml` | PR 质量门全绿 |
+| 11 | 前端 RuoYi-Vue3 → `web/`：拷贝工程 → 改名 `e-aio-web` → 按 3.9.2 统一 request 封装（POST + JSON）→ 移除 RuoYi 直连后端 baseURL，改 Vite 代理 → 清理 RuoYi 私有页面（P1 按模块重建 views） | RuoYi-Vue3 | `npm run build` 通过 |
+| 12 | 清理与合规收尾：父 POM 无 RuoYi 残留模块；删除 RuoYi 私有常量/表注释残留；保留 MIT LICENSE 与版权声明；README 与 CONTRIBUTING 就位 | 全工程 | 对照 5.2 P0 验收清单 |
+
+#### 3.10.3 包名重写与文件级操作示例
+
+```bash
+# 包名重写（示例）：ruoyi-common → e-aio-common
+# 1) 物理目录迁移
+git mv ruoyi-common/src/main/java/com/ruoyi/common e-aio-common/src/main/java/com/eaio/common
+# 2) 全量包名替换（IDE 或 sed 等价操作）
+#    com.ruoyi.common → com.eaio.common
+# 3) 关键类型改造
+#    AjaxResult       → Result<T>（com.eaio.common.api）
+#    BaseEntity       → 按用途拆为 PageResult<T> / BaseDO
+#    Constants/UserConstants → RedisKeys 等按 e-aio 键规范重写
+# 4) 构建验证
+mvn -pl e-aio-common -am clean compile
+```
+
+> **注意事项**：① 改造必须保留 RuoYi 版权声明与 LICENSE（MIT）；② 步骤 2/3 的迁移产物必须通过 3.7 ArchUnit（common 不依赖任何模块）；③ 步骤 4 的拆分登记冻结为 P1 契约，避免 P0 提前引入业务表；④ 前端清理后 RuoYi 页面（system 等）在 P1 portal 重建，P0 仅保留布局/路由/权限指令框架。
 
 ---
 
