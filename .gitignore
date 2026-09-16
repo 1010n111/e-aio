@@ -1,0 +1,24 @@
+# 本地 AI 辅助开发工具链（Vibe Coding 配置，不入库）
+.agents/
+skills-lock.json
+
+# 构建产物与依赖
+target/
+build/
+node_modules/
+dist/
+*.class
+*.jar
+*.war
+
+# 日志与临时文件
+*.log
+logs/
+tmp/
+*.tmp
+
+# IDE 配置
+.idea/
+*.iml
+.vscode/
+.DS_Store
