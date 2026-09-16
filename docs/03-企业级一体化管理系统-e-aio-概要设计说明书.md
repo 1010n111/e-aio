@@ -437,13 +437,16 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 ### 5.1 common（通用工具库）— 技术底座
 
-**职责**：提供跨模块复用的**无状态通用工具**：Excel 工具、Redis 工具、通用工具类（日期/字符串/集合/JSON/Bean/树形）、ID 生成、统一返回体与异常、常量、加密与脱敏工具等。common 为纯技术代码库，**不包含业务逻辑、不建表、无独立 Schema**，被所有模块（含 platform）依赖，不依赖任何模块。
+**职责**：提供跨模块复用的**无状态通用工具**：Excel 工具、Redis 工具、通用工具类（日期/字符串/集合/JSON/Bean/树形）、ID 生成、统一返回体与异常、常量、加密与脱敏工具等，并统一接入 **Lombok**（编译期样板代码生成）、**Hutool**（Java 工具库底座）、**Bean Validation**（参数校验）等常用开源工具。common 为纯技术代码库，**不包含业务逻辑、不建表、无独立 Schema**，被所有模块（含 platform）依赖，不依赖任何模块。
 
 **核心设计**：
 
 - **Excel 工具（ExcelKit）**：基于 EasyExcel / Apache POI 封装流式读写、样式、多 Sheet、大数据量导出（10 万 + 行）、导入解析与错误定位；为 platform 的 Excel 导入导出服务（FR-PLT-05）及全部业务模块提供底层能力。
 - **Redis 工具（RedisKit）**：RedisTemplate / Redisson 封装：缓存读写、分布式锁、限流器、轻量队列；支撑缓存管理（FR-PLT-07）与定时任务分布式锁防重（ShedLock 兼容）。
-- **通用工具类**：DateUtils、StringUtils、CollectionUtils、JsonUtils（Jackson）、BeanUtils、树形工具（组织树/菜单树通用处理）、脱敏工具（手机号/证件/账号）、加密工具（AES-GCM / RSA / HMAC）、雪花 ID 生成器。
+- **通用工具类**：以 **Hutool** 为基础工具库底座（字符串/日期/集合/IO/加密/树形/Excel 等），在其上做薄封装形成 e-aio 统一工具门面（DateUtils、StringUtils、CollectionUtils、JsonUtils（Jackson）、BeanUtils、树形工具、脱敏工具、雪花 ID 生成器等），避免重复造轮子。
+- **Lombok**：编译期注解处理器（@Data / @Builder / @Slf4j / @RequiredArgsConstructor 等），简化 POJO 与日志样板代码，纳入统一代码规范（需 IDE 插件支持）。
+- **Bean Validation**：jakarta.validation + Hibernate Validator 标准参数校验（@NotNull / @Size / @Valid / 自定义约束），DTO 入参统一校验、校验错误码映射，全模块复用。
+- **MapStruct**：DTO / 实体对象映射编译期生成，替代手写 BeanUtils 反射拷贝（性能敏感与跨模块 DTO 转换场景）。
 - **统一返回体与异常**：`Result<T>` 统一响应、`BusinessException` 与错误码体系（`ErrorCode`）、全局异常处理基础类，供全模块复用。
 - **对外**：以静态工具类 / Spring Bean 形式提供：`ExcelKit`、`RedisKit`、`DistributedLock`、`RateLimiter`、`IdGenerator`、`JsonUtils`、`SecurityUtils`、`SensitiveUtils` 等。
 - **约束**：common 内禁止引入业务模块依赖与业务配置；对外 API 变更需保持向后兼容（被全模块引用）。
@@ -818,6 +821,10 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | Spring Security + OAuth2 | 认证授权 | Apache-2.0 |
 | PostgreSQL + pgvector | 主库 / 向量 | PostgreSQL |
 | Redis | 缓存 / 会话 / 锁 | BSD-3 |
+| Lombok | 编译期样板代码生成（POJO / 日志） | MIT |
+| Hutool | Java 工具库底座（字符串/日期/集合/加密/Excel 等） | MPL-2.0 |
+| Bean Validation（Hibernate Validator） | 参数校验标准 + 参考实现 | Apache-2.0 |
+| MapStruct | DTO / 实体映射（编译期） | Apache-2.0 |
 | MyBatis-Plus | 持久层（承接 RuoYi 蓝本） | Apache-2.0 |
 | HikariCP / Druid | 数据库连接池 | Apache-2.0 |
 | Vue3 + Vite + Element Plus | 前端工程（RuoYi-Vue3 蓝本） | MIT |

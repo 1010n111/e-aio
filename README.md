@@ -57,6 +57,7 @@
 | 层              | 选型                                                                     |
 | -------------- | ---------------------------------------------------------------------- |
 | **语言 / 框架**    | Java 21（或更新 LTS）+ **Spring Boot 4.1.x + Spring Modulith 2.1.x**（开源）    |
+| **工具库**       | Lombok / Hutool / Bean Validation / MapStruct（开源）
 | **前端**         | Vue 3 + Vite + Element Plus（RuoYi-Vue3 蓝本，开源）+ 配置化渲染引擎                                             |
 | **数据库**        | PostgreSQL（开源，主库，事务强一致）                                                |
 | **缓存**         | Redis（开源，分布式）+ Caffeine（开源，本地二级缓存）                                     |
