@@ -90,10 +90,8 @@ e-aio/
 │   └── src/main/java/com/eaio/EaioApplication.java
 ├── e-aio-common/                # common 技术底座（顺序 2）
 │   └── src/main/java/com/eaio/common/
-├── e-aio-modules/               # 业务/能力模块（P1 起逐个新增）
-│   ├── e-aio-platform/          # P1 顺序 3（预留）
-│   └── ...
-├── e-aio-web/                   # 前端工程（RuoYi-Vue3 蓝本，独立目录）
+├── e-aio-platform/              # 模块平铺于根目录（P1 顺序 3 预留，父 POM 同步登记）
+└── ...                          # P1–P3 按队列顺序新增 e-aio-<module>├── e-aio-web/                   # 前端工程（RuoYi-Vue3 蓝本，独立目录）
 │   └── src/...
 ├── .github/workflows/ci.yml     # CI 流水线
 └── docs/                        # 工程文档
@@ -139,10 +137,10 @@ e-aio/
 | lombok | 样板代码生成 | MIT |
 | hutool-all | 工具库底座 | MPL-2.0 |
 | mapstruct + mapstruct-processor | DTO 映射 | Apache-2.0 |
-| mybatis-plus-spring-boot3-starter | 持久层（P1 起生效，P0 仅引入） | Apache-2.0 |
-| flyway-core + flyway-database-postgresql | 数据库迁移 | Apache-2.0 |
+| mybatis-plus-spring-boot3-starter | 持久层（P0 仅引入占位，P1 启用；Boot 4 对应 starter 版本 P1 落地时确认） | Apache-2.0 || flyway-core + flyway-database-postgresql | 数据库迁移 | Apache-2.0 |
 | postgresql | JDBC 驱动 | PostgreSQL |
-| spring-boot-starter-data-redis | Redis | Apache-2.0 |
+| spring-boot-starter-data-redis | Redis 基础 | Apache-2.0 |
+| redisson-spring-boot-starter | 分布式锁 / 限流 / 队列（RedisKit 底层） | Apache-2.0 |
 | archunit-junit5 | 架构测试 | Apache-2.0 |
 | junit5 / assertj / testcontainers | 测试 | Apache-2.0 |
 | springdoc-openapi-starter-webmvc-ui | OpenAPI 3.x 文档 | Apache-2.0 |
@@ -227,9 +225,11 @@ public class PageResult<T> {
     private long pageNum;      // 当前页
     private long pageSize;     // 页大小
     private List<T> records;   // 当前页数据
-    // 静态工厂 from(IPage<T>) / from(total, records) 省略
+    // 静态工厂 from(long total, List<T> records) 等省略
 }
 ```
+
+> **纯净性约束**：`PageResult<T>` 不依赖任何持久层类型（不引用 MyBatis-Plus `IPage` 等），由各模块持久层在 `api` 层适配转换，保证 common 纯工具库属性（4.1）。
 
 分页查询统一返回 `Result<PageResult<T>>`；分页参数统一入 JSON body（`pageNum`/`pageSize`/排序字段）。
 
@@ -273,7 +273,24 @@ public class BusinessException extends RuntimeException {
 
 /** 系统异常：内部错误，不向用户暴露细节。 */
 public class SystemException extends RuntimeException { ... }
+
+/** 幂等拦截异常：重复请求（携带相同幂等键）时抛出。 */
+public class IdempotentReplayException extends RuntimeException {
+    public IdempotentReplayException() { super("请求已提交，请勿重复操作"); }
+}
 ```
+
+#### 3.2.5 幂等键拦截（后端）
+
+写接口（Add/Up/Del 及业务动作）统一经幂等过滤器防重（与前端 3.9.2 携带的 `Idempotency-Key` 配合）：
+
+| 要素 | 设计 |
+|------|------|
+| 拦截点 | `IdempotencyFilter`（OncePerRequestFilter，按 URL + `Idempotency-Key` 请求头） |
+| 存储 | Redis：键 `eaio:{env}:idem:{sha256(URL+key)}`，TTL 24h（可配） |
+| 流程 | 请求到达 → SETNX 占用 → 已存在则返回 `Result.fail(IDEMPOTENT_REPLAY)`（10501）→ 业务执行 → 成功/失败均保留占位（失败允许覆盖重试需业务配合） |
+| 异常 | 幂等命中抛 `IdempotentReplayException`，由 3.3 全局异常处理统一返回 |
+| 范围 | 写接口强制、查询接口不启用；幂等键缺失时按普通请求放行并记录 WARN |
 
 ### 3.3 全局异常处理
 
@@ -348,7 +365,7 @@ eaio:
 | 脚本位置 | `classpath:db/migration`（按模块分包：`db/migration/eaio_platform/`、`db/migration/eaio_org/`…） |
 | 命名规范 | `V<版本>__<描述>.sql`（如 `V1__init_schema.sql`）；重复执行用 `R__` |
 | Schema 管理 | 每个模块在 `application-{module}.yml` 声明 `spring.flyway.schemas=eaio_<module>`；启动时自动创建 schema 并执行迁移 |
-| P0 内容 | 仅创建预留 schema（`eaio_platform` 等由 P1 声明）与 Flyway 元表；**无业务表** |
+| P0 内容 | 不创建任何业务 Schema（各模块 Schema 由 P1 起在各自迁移脚本声明）；仅启用 Flyway 元表与骨架迁移基线 |
 | 种子数据 | P0 提供骨架种子（系统参数初值），业务种子（字典/角色/流程模板）在对应模块 P1 落地时由各自迁移脚本注入 |
 
 ### 3.7 ArchUnit 质量门
@@ -394,12 +411,15 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 
 ```js
 // 统一 POST + JSON：所有接口（含查询/删除/导出）走 POST
-const request = (url, params = {}) =>
-  axios.post(url, params, {
-    headers: { 'Content-Type': 'application/json' },
-    // 幂等键：写接口由调用方传入
-    ...(params.__idempotencyKey ? { 'Idempotency-Key': params.__idempotencyKey } : {}),
+const request = (url, params = {}) => {
+  const { __idempotencyKey, ...body } = params  // 幂等键从 body 剔除，仅作请求头
+  return axios.post(url, body, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(__idempotencyKey ? { 'Idempotency-Key': __idempotencyKey } : {}),
+    },
   })
+}
 
 // 响应拦截：Result<T> 统一解包；code!==0 提示并 reject；HTTP 401/403 跳登录
 ```
@@ -444,7 +464,7 @@ com.eaio.common
 └── mapper     # MapStruct 映射基类约定（无代码，规范说明）
 ```
 
-**P0 冻结清单（契约 V1）**：附录 6.2 列出全部对外类与方法签名；P1 起新增 API 向后兼容。
+**P0 冻结清单（契约 V1）**：附录 6.2 列出全部对外类（方法签名见第 4 章各小节）；P1 起新增 API 向后兼容。
 
 ### 4.2 工具门面（Hutool 底座）
 
@@ -490,8 +510,8 @@ public class ExcelKit {
     // 模板导出：预置表头/样式
     public static <T> void writeWithTemplate(OutputStream out, String templatePath, List<T> data);
 
-    // 异步导入任务（配合 platform Scheduler，P1 落地调用方）
-    public static <T> ImportResult<T> readAsync(InputStream in, Class<T> clazz, Consumer<ImportProgress> progress);
+    // 异步导入任务：返回任务 ID（进度/结果经平台 Scheduler 查询，P1 落地调用方）
+    public static <T> String submitImport(InputStream in, Class<T> clazz, ImportCallback<T> callback);
 }
 
 /** 导入结果：含成功行 + 错误行定位 */
@@ -504,6 +524,13 @@ public class ImportResult<T> {
 
 /** 字段映射注解：@ExcelProperty(name="客户名称", index=0, required=true, validate=...) */
 public @interface ExcelProperty { String name(); int index() default -1; boolean required() default false; }
+
+/** 异步导入回调：进度上报 + 完成/失败通知（配合平台 Scheduler 异步任务） */
+public interface ImportCallback<T> {
+    void onProgress(ImportProgress progress);   // 行数进度
+    void onSuccess(ImportResult<T> result);     // 完成（含错误行）
+    void onError(Exception e);                  // 失败
+}
 ```
 
 要点：
@@ -615,7 +642,7 @@ public class QueueService {
 | 工程骨架 CI 绿灯 | GitHub Actions 全阶段通过 |
 | ArchUnit 验证通过 | `ApplicationModules.verify()` + 自定义规则 0 违例 |
 | Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功，多 Schema 创建正确 |
-| common 全部工具单测通过 | 附录 4.8 测试清单全绿，覆盖率达标 |
+| common 全部工具单测通过 | 第 4.8 节测试清单全绿，覆盖率达标 |
 
 ### 5.3 里程碑交付（对齐可研 7.1 阶段 0）
 
@@ -649,7 +676,7 @@ public class QueueService {
 | 包 | 类 | 说明 |
 |----|-----|------|
 | `com.eaio.common.api` | `Result<T>`、`PageResult<T>`、`ErrorCode` | 统一返回体/分页/错误码 |
-| `com.eaio.common.exception` | `BusinessException`、`SystemException` | 异常类型 |
+| `com.eaio.common.exception` | `BusinessException`、`SystemException`、`IdempotentReplayException` | 异常类型 |
 | `com.eaio.common.id` | `IdGenerator` | 雪花 ID |
 | `com.eaio.common.json` | `JsonUtils` | Jackson 统一封装 |
 | `com.eaio.common.util` | `DateUtils/StringUtils/CollectionUtils/BeanUtils/TreeUtils/SensitiveUtils/ConvertUtils` | 工具门面 |

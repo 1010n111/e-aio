@@ -215,9 +215,9 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 
 ---
 
-### 2.6 实现蓝本：基于 RuoYi（Apache-2.0）重写
+### 2.6 实现蓝本：基于 RuoYi（MIT）重写
 
-e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版）** 为代码蓝本（Apache-2.0 许可，可合规复用）：后端为 Spring Modulith 模块化单体（RESTful API + JWT 认证），前端为独立工程（Vue3）。在保留 RuoYi 成熟系统管理功能集的前提下，用 **Spring Boot 4.x + Spring Modulith 2.x 重构后端为模块化单体**。RuoYi-Vue 官方 master 分支已基于 Spring Boot 4.x（JDK 17+），与 e-aio 技术基线一致，可平滑移植并模块化改造。
+e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版）** 为代码蓝本（MIT 许可，可合规复用）：后端为 Spring Modulith 模块化单体（RESTful API + JWT 认证），前端为独立工程（Vue3）。在保留 RuoYi 成熟系统管理功能集的前提下，用 **Spring Boot 4.x + Spring Modulith 2.x 重构后端为模块化单体**。RuoYi-Vue 官方 master 分支已基于 Spring Boot 4.x（JDK 17+），与 e-aio 技术基线一致，可平滑移植并模块化改造。
 
 #### 2.6.1 RuoYi → e-aio 模块映射
 
@@ -248,7 +248,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 
 #### 2.6.3 复用边界（许可证与合规）
 
-- RuoYi-Vue 采用 **Apache-2.0** 许可证，代码可自由复用、修改、分发；e-aio 继续采用 Apache-2.0，保留原版权声明与 LICENSE 即可合规。
+- RuoYi-Vue 采用 **MIT** 许可证，代码可自由复用、修改、分发（比 Apache-2.0 更宽松）；e-aio 整体继续采用 **Apache-2.0**，保留 RuoYi 原版权声明与 LICENSE 即可合规。
 - 重写过程以"模块迁移 + 能力增强"为原则：**优先复用 RuoYi 成熟实现（系统管理、认证、字典、日志），叠加 e-aio 差异化能力（母子公司权限、双审计、主数据、AI）**，避免从零重复造轮子。
 
 #### 2.6.4 API 对接约定（统一 POST + JSON）
