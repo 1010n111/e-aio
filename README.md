@@ -120,12 +120,12 @@
 ```
 e-aio/
 
-├── backend/                     # 后端工程（Spring Modulith 模块化单体，Maven 多模块）
-│   ├── pom.xml                  # 父 POM（依赖管理 BOM）
-│   ├── e-aio-app/               # 启动模块（可执行 Jar）
-│   ├── e-aio-common/            # common 技术底座（Excel/Redis/通用工具门面）
-│   └── …                        # P1–P3 按队列新增 e-aio-<module>
-
+├── backend/                     # 后端工程根目录
+│   └── e-aio/                   # 后端工程（父 POM 所在，Spring Modulith 模块化单体，Maven 多模块）
+│       ├── pom.xml              # 父 POM（依赖管理 BOM）
+│       ├── e-aio-app/           # 启动模块（可执行 Jar）
+│       ├── e-aio-common/        # common 技术底座（Excel/Redis/通用工具门面）
+│       └── …                    # P1–P3 按队列新增 e-aio-<module>
 ├── frontend/                    # 前端独立工程（RuoYi-Vue3 蓝本，Vue3 + Vite + Element Plus）
 
 ├── docs/                        # 项目文档

@@ -87,14 +87,15 @@ P0 目标是搭建**可运行、可验证、可扩展**的工程地基，交付�
 
 ```
 e-aio/                                # 主仓库（backend + frontend + docs）
-├── backend/                          # 后端工程（Spring Modulith 模块化单体，Maven 多模块）
-│   ├── pom.xml                       # 父 POM（依赖管理 BOM）
-│   ├── e-aio-app/                    # 启动模块（Spring Boot 可执行 Jar）
-│   │   └── src/main/java/com/eaio/EaioApplication.java
-│   ├── e-aio-common/                 # common 技术底座（顺序 2）
-│   │   └── src/main/java/com/eaio/common/
-│   ├── e-aio-platform/               # 模块平铺于 backend/ 下（P1 顺序 3 预留，父 POM 同步登记）
-│   └── …                             # P1–P3 按队列顺序新增 e-aio-<module>
+├── backend/                          # 后端工程根目录
+│   └── e-aio/                        # 后端工程（Spring Modulith 模块化单体，Maven 多模块，父 POM 所在）
+│       ├── pom.xml                   # 父 POM（依赖管理 BOM）
+│       ├── e-aio-app/                # 启动模块（Spring Boot 可执行 Jar）
+│       │   └── src/main/java/com/eaio/EaioApplication.java
+│       ├── e-aio-common/             # common 技术底座（顺序 2）
+│       │   └── src/main/java/com/eaio/common/
+│       ├── e-aio-platform/           # 模块平铺于 backend/e-aio/ 下（P1 顺序 3 预留，父 POM 同步登记）
+│       └── …                         # P1–P3 按队列顺序新增 e-aio-<module>
 ├── frontend/                         # 前端独立工程（RuoYi-Vue3 蓝本，前后端分离）
 │   ├── src/…                         # 见 3.1.4
 │   ├── vite.config.js                # 开发代理 → 后端 API；生产独立部署
@@ -105,7 +106,7 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 └── README.md
 ```
 
-> **命名说明**：Maven artifactId 前缀 `e-aio-`，模块根包统一 `com.eaio.<module>`。**P0 只创建 `backend/e-aio-app` 与 `backend/e-aio-common`**，业务模块目录在 P1 启动时按顺序新增，父 POM 模块清单同步维护。
+> **命名说明**：Maven artifactId 前缀 `e-aio-`，模块根包统一 `com.eaio.<module>`。**P0 只创建 `backend/e-aio/e-aio-app` 与 `backend/e-aio/e-aio-common`**，业务模块目录在 P1 启动时按顺序新增，父 POM 模块清单同步维护。
 >
 > **前端工程边界**：`frontend/` 为独立 npm 工程（不参与 Maven 构建），独立版本管理；如需独立仓库协作，可将 `frontend/` 整体拆分为 `e-aio-web` 仓库（与 RuoYi-Vue3 独立前端仓库一致），后端仅依赖其 API 契约。
 
@@ -305,7 +306,7 @@ public class IdempotentReplayException extends RuntimeException {
 
 ### 3.3 全局异常处理
 
-`GlobalExceptionHandler` 位于 `backend/e-aio-app`（`com.eaio.app.web`），`@RestControllerAdvice` 实现：
+`GlobalExceptionHandler` 位于 `backend/e-aio/e-aio-app`（`com.eaio.app.web`），`@RestControllerAdvice` 实现：
 
 | 异常类型 | 处理结果 | 日志 |
 |----------|----------|------|
@@ -381,7 +382,7 @@ eaio:
 
 ### 3.7 ArchUnit 质量门
 
-`ArchitectureTest`（`backend/e-aio-app/src/test/java`）固化规则集：
+`ArchitectureTest`（`backend/e-aio/e-aio-app/src/test/java`）固化规则集：
 
 | 规则 | 说明 |
 |------|------|
@@ -470,7 +471,7 @@ export const customerApi = {
 | 步骤 | 动作 | 涉及内容 | 输出 / 验收 |
 |------|------|----------|-------------|
 | 0 | 准备：clone `RuoYi-Vue` 与 `RuoYi-Vue3` 至临时目录；确认 MIT LICENSE 保留 | 两个上游工程 | 改造基线版本号记录 |
-| 1 | 建立 e-aio 父 POM 骨架：`groupId=com.eaio`、`artifactId=e-aio`、`<modules>` 仅含 `e-aio-app`、`e-aio-common`；引入 3.1.2 依赖基线 | 在 `backend/` 下新建 `pom.xml` | `mvn -B compile` 通过 |
+| 1 | 建立 e-aio 父 POM 骨架：`groupId=com.eaio`、`artifactId=e-aio`、`<modules>` 仅含 `e-aio-app`、`e-aio-common`；引入 3.1.2 依赖基线 | 在 `backend/e-aio/` 下新建 `pom.xml` | `mvn -B compile` 通过 |
 | 2 | 迁移 ruoyi-common → e-aio-common：全量拷贝工具类，包名 `com.ruoyi.common` → `com.eaio.common`；`AjaxResult`→`Result<T>`、`BaseEntity`→`PageResult<T>` 配套改造；删 RuoYi 私有业务常量 | ruoyi-common | 第 4 章工具门面清单落位 |
 | 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 security 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/health` 可用 |
 | 4 | ruoyi-system 拆分登记：用户/部门/岗位 → org（P1）；角色/菜单/权限 → security（P1）；字典/参数/公告 → platform（P1）；操作日志/登录日志 → audit（P1）。**P0 不搬入**，仅冻结契约 | ruoyi-system | 契约清单（6.3 待 P1 细化事项） |
@@ -486,16 +487,16 @@ export const customerApi = {
 #### 3.10.3 包名重写与文件级操作示例
 
 ```bash
-# 包名重写（示例）：ruoyi-common → backend/e-aio-common
-# 1) 物理目录迁移（在 backend/ 下操作）
-git mv ruoyi-common/src/main/java/com/ruoyi/common backend/e-aio-common/src/main/java/com/eaio/common
+# 包名重写（示例）：ruoyi-common → backend/e-aio/e-aio-common
+# 1) 物理目录迁移（在 backend/e-aio/ 下操作）
+git mv ruoyi-common/src/main/java/com/ruoyi/common e-aio-common/src/main/java/com/eaio/common
 # 2) 全量包名替换（IDE 或 sed 等价操作）
 #    com.ruoyi.common → com.eaio.common
 # 3) 关键类型改造
 #    AjaxResult       → Result<T>（com.eaio.common.api）
 #    BaseEntity       → 按用途拆为 PageResult<T> / BaseDO
 #    Constants/UserConstants → RedisKeys 等按 e-aio 键规范重写
-# 4) 构建验证（在 backend/ 下执行）
+# 4) 构建验证（在 backend/e-aio/ 下执行）
 mvn -pl e-aio-common -am clean compile
 ```
 
