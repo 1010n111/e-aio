@@ -885,6 +885,75 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 6. 事件总线可靠性（重试、死信、幂等）具体实现；
 7. 信创数据库适配层（方言抽象）方案。
 
+
+
+
 ---
+
+## 13. 模块开发顺序与实施计划
+
+### 13.1 开发顺序总原则
+
+1. **依赖前置（拓扑排序）**：按 11.1 模块依赖矩阵推导开发次序——无依赖者先行，被依赖者先于依赖者落地，顺序为 **common → 平台底座 → 通用业务 → 平台支撑**。
+2. **契约先行**：被依赖模块先定义公共 API（接口 + DTO + 事件契约）并冻结版本，实现可与依赖方并行推进；跨模块联调以契约为准。
+3. **关键链路优先**：母子公司权限、双审计、主数据三大引擎最先成型，决定全局架构正确性，后续模块全部复用。
+4. **MVP 闭环**：9 个月内交付"平台底座 + OA + 审批 + 工作流 + 操作审计"可运行 MVP，供种子企业验证后再铺开业务模块。
+5. **可插拔演进**：每个模块独立开发/测试/打包，随时可按 NFR-EXT-01 裁剪，不影响主线交付。
+
+### 13.2 开发队列（批次与顺序）
+
+| 批次 | 顺序 | 模块 | 前置依赖（来自 11.1） | 里程碑 |
+|------|------|------|----------------------|--------|
+| P0 工程地基 | 1 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体） | 无 | M0–M1 |
+| P0 工程地基 | 2 | 工程骨架（Modulith 命名空间 + ArchUnit 质量门 + Flyway + CI 流水线 + 统一异常/错误码） | common | M0–M1 |
+| P1 平台底座 | 3 | platform（参数/字典/文件/定时任务/Excel/缓存/监测） | common | M1–M3 |
+| P1 平台底座 | 4 | org（组织与用户） | platform | M2–M4 |
+| P1 平台底座 | 5 | security（认证授权与权限引擎：母子公司） | org | M3–M5 |
+| P1 平台底座 | 6 | audit（操作审计，WORM 防篡改） | security、org、platform | M4–M6 |
+| P1 平台底座 | 7 | workflow + approval（工作流与统一审批中心） | security、audit、platform、org | M5–M8 |
+| P1 平台底座 | 8 | mdm（主数据管理） | security、org、audit、workflow | M6–M8 |
+| P1 平台底座 | 9 | oa（OA 协同，首个业务模块验证） | 平台底座全部 | M7–M9 |
+| P1 平台底座 | 10 | portal（门户收口：菜单/待办聚合/消息） | security、approval、oa、platform | M8–M9 |
+| P2 业务闭环 | 11 | report（报表 BI） | security、audit | M9–M12 |
+| P2 业务闭环 | 12 | project（项目管理） | security、org、audit、workflow | M9–M12 |
+| P2 业务闭环 | 13 | finance（财务，与 fund 契约先行） | security、mdm、audit、workflow、fund（契约）、platform | M10–M14 |
+| P2 业务闭环 | 14 | fund（资金管理，与 finance 契约并行） | security、mdm、finance（契约）、audit、workflow | M11–M14 |
+| P2 业务闭环 | 15 | inventory（库存） | security、mdm、audit、finance | M12–M16 |
+| P2 业务闭环 | 16 | crm（客户关系） | security、mdm、workflow、audit、finance、platform | M12–M17 |
+| P2 业务闭环 | 17 | hr（人力资源） | security、org、audit、finance | M13–M18 |
+| P2 业务闭环 | 18 | scm（供应链） | security、mdm、audit、workflow、inventory、finance | M14–M20 |
+| P2 业务闭环 | 19 | marketing（营销） | security、crm、audit | M16–M21 |
+| P2 业务闭环 | 20 | ai（AI 增强：RAG/OCR/智能审单，契约先行供 service） | security、audit、platform | M15–M22 |
+| P2 业务闭环 | 21 | service（售后客服） | security、crm、inventory、ai | M17–M23 |
+| P3 平台化开放 | 22 | integration（开放平台：API 网关/OpenAPI/Webhook/主数据分发） | security、mdm、audit、platform | M24–M28 |
+| P3 平台化开放 | 23 | mobile（移动端 H5/小程序） | security、approval、portal、inventory | M24–M30 |
+| P3 平台化开放 | 24 | i18n（多语言多币种） | security、mdm、platform | M26–M32 |
+| P3 平台化开放 | 25 | 行业业务模块（按企业定制） | 通用能力层全部 | M28–M36 |
+
+> **说明**：finance ↔ fund 存在接口级相互依赖（凭证↔收付款核销），按"契约先行"处理——先冻结 `VoucherApi` / `PaymentApi` 契约，双方并行实现，运行时经公共 API 调用，不构成包级循环。
+
+### 13.3 批次验收标准
+
+| 批次 | 验收标准 |
+|------|----------|
+| P0 | common 全部工具单测通过；工程骨架 CI 绿灯、ArchUnit 验证通过、Flyway 迁移可运行 |
+| P1 | 母子公司权限 E2E（组织树/数据权限/SoD/跨公司审批）通过；操作审计 WORM + 哈希链校验验证；工作流+审批全链路跑通；MVP 种子企业试用反馈 |
+| P2 | 业务闭环 E2E：合同→应收、出库→凭证、采购→入库→对账；财务审计（账实相符/四流合一）通过；2,000 并发性能测试达标 |
+| P3 | OpenAPI 对外集成联调通过；移动端 H5 上线；多语言多币种切换验证；行业模块模板沉淀 ≥ 1 套 |
+
+### 13.4 并行开发与契约先行
+
+- **链内串行、链间并行**：P1 平台底座为链式（platform→org→security→audit→workflow→mdm），相邻模块契约先行后实现可重叠；P2 中 report/project/ai 与 finance 链并行；P3 三个平台支撑模块互不依赖可并行。
+- **契约冻结**：模块公共 API 由架构师与模块负责人共同评审后冻结 V1，进入开发队列；契约变更走评审，避免联调返工。
+- **节奏**：单模块 2–4 周；核心维护组 5–8 人 + 领域贡献者并行；每批次结束做架构评审（ArchUnit + 契约 + 质量门）。
+
+### 13.5 里程碑映射
+
+| 项目里程碑（可研 7.1） | 开发队列 | 交付 |
+|--------------------------|----------|------|
+| 阶段 0（M0–M2）技术预研 | P0 + P1 启动 | Modulith 骨架、配置化定制 PoC、AI PoC、立项评审 |
+| 阶段 1（M2–M9）MVP | P1 完成（顺序 1–10） | 平台底座 + OA + 审批 + 权限 + 工作流 + 操作审计 MVP |
+| 阶段 2（M9–M24）业务闭环 | P2 完成（顺序 11–21） | CRM/库存/财务（含财务审计）/HRM/SCM/报表，商机→合同→履约→回款闭环 |
+| 阶段 3（M24–M36）平台化 | P3 完成（顺序 22–25） | 开放平台/移动端/多语言多币种，行业解决方案与社区生态 |
 
 *本概要设计说明书为 V1.0 草案，基于可行性研究报告与 SRS 编制；详细设计阶段将逐模块细化并保持与本文档的一致性与可追溯性。*
