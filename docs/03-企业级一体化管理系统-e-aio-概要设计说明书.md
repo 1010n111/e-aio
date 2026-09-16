@@ -237,7 +237,8 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 |-----------|-----------|---------------------|----------|
 | ruoyi-common | 常量、AjaxResult/BaseEntity、核心工具、Redis 工具、安全工具、注解 | common | 工具下沉 common；注解与 AOP 基类归 platform |
 | ruoyi-framework | SecurityConfig、JWT、拦截器、AOP（操作日志/防重）、Web 配置 | security + audit + platform | 认证授权归 security；操作日志归 audit；拦截器/配置归 platform |
-| ruoyi-system | 用户 / 角色 / 菜单 / 权限 | security | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
+| ruoyi-system | 用户主档（sys_user） | org | 用户主档（账号/姓名/状态/多组织挂载）归 org，与 5.3 一致；密码凭证与登录策略（MFA/SSO）归 security |
+| ruoyi-system | 角色 / 菜单 / 权限 | security | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
 | ruoyi-system | 部门 / 岗位 | org | 组织树升级为无限级（集团-子公司-部门） |
 | ruoyi-system | 字典 / 参数 / 公告 | platform | 保留并扩展分级配置 |
 | ruoyi-system | 操作日志 / 登录日志 | audit | 升级为 WORM 防篡改双审计 |
@@ -467,7 +468,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 ### 5.3 org（组织与用户）— 平台底座
 
-**职责**：组织节点、岗位、用户、员工任职管理；组织生命周期（成立/合并/注销）；通讯录。
+**职责**：组织节点、岗位、用户主档、员工任职管理；组织生命周期（成立/合并/注销）；通讯录。
+**边界**：用户主档（账号/姓名/状态/多组织挂载）在 org；密码凭证、MFA/SSO 绑定与登录策略在 security；角色/菜单/权限点在 security。
 
 **核心设计**：组织树闭包表（`org_node_path`）加速子树查询；组织生命周期状态机（筹备→运营→注销→归档），注销触发权限清理（协同 security）；员工任职与组织节点关联，支撑"兼任多组织"。
 
