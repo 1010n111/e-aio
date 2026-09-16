@@ -1,23 +1,11 @@
 # 企业级一体化管理系统（e-aio）概要设计说明书（HLD）
 
-> **项目名称**
->
-> ：企业级一体化管理系统（e-aio）
-> **项目定位**
->
-> ：通用能力大一统 + 业务逻辑按企业定制的企业级开源系统
-> **编制依据**
->
-> ：GB/T 8567-2006《计算机软件文档编制规范》、GB/T 9385-2008《计算机软件需求规格说明规范》、GB/T 9386-2008《计算机软件测试文档编制规范》
-> **上游文档**
->
-> ：01-可行性研究报告、02-软件需求规格说明书（SRS）
-> **版本**
->
-> ：V1.0（草案）
-> **日期**
->
-> ：2026-09-16
+> **项目名称**：企业级一体化管理系统（e-aio）
+> **项目定位**：通用能力大一统 + 业务逻辑按企业定制的企业级开源系统
+> **编制依据**：GB/T 8567-2006《计算机软件文档编制规范》、GB/T 9385-2008《计算机软件需求规格说明规范》、GB/T 9386-2008《计算机软件测试文档编制规范》
+> **上游文档**：01-可行性研究报告、02-软件需求规格说明书（SRS）
+> **版本**：V1.0（草案）
+> **日期**：2026-09-16
 
 ---
 
@@ -109,7 +97,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 │  工作流 │ 审批 │ 权限 │ 审计 │ 报表BI │ AI │ 门户消息 │ 主数据MDM │
 ├────────────────────────────────────────────────────────────┤
 │                    业务模块层（按企业定制）                     │
-│  行业业务对象模块（仅依赖通用能力，禁止反向）                      │
+│  行业业务模块（仅依赖通用能力，禁止反向）       │
 ├────────────────────────────────────────────────────────────┤
 │                  配置化定制引擎（元数据 / 规则 / 表单）          │
 ├────────────────────────────────────────────────────────────┤
@@ -123,7 +111,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 
 #### 2.2.2 模块化单体边界（Spring Modulith）
 
-- **命名空间规范**：模块根包 `com.eaio.<module>`，模块内部按 `api / application / domain / infrastructure / events` 分包；`api` 为对外公共接口包，`internal` 为模块内部实现，禁止跨模块引用 `internal`。
+- **命名空间规范**：模块根包 `com.eaio.&lt;module&gt;`，模块内部按 `api / application / domain / infrastructure / events` 分包；`api` 为对外公共接口包，`internal` 为模块内部实现，禁止跨模块引用 `internal`。
 - **技术底座 common**：`com.eaio.common` 为最底层技术底座包，被所有模块共享；common 不依赖任何模块。
 - **Spring Modulith 验证**：`ApplicationModules.verify()` 在测试阶段自动校验模块依赖、禁止循环依赖、禁止访问他人 `internal`。
 - **单一可执行产物**：整个系统构建为一个 Spring Boot 可执行 Jar，通过配置按需启用模块。
@@ -270,10 +258,10 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | 维度 | 约定 |
 |------|------|
 | 协议 | HTTP/HTTPS，统一 POST，`Content-Type: application/json` |
-| URL 风格 | `/api/<module>/<resource>/<action>`，动作体现在接口名中（动作词规约见下），如 `POST /api/crm/customer/Get`、`POST /api/crm/customer/Add`、`POST /api/crm/customer/Up`、`POST /api/crm/customer/Del` |
+| URL 风格 | `/api/&lt;module&gt;/&lt;resource&gt;/&lt;action&gt;`，动作体现在接口名中（动作词规约见下），如 `POST /api/crm/customer/Get`、`POST /api/crm/customer/Add`、`POST /api/crm/customer/Up`、`POST /api/crm/customer/Del` |
 | 请求体 | 全部参数（条件/分页/排序/ID 等）置于 JSON body，查询与写操作一致 |
-| 响应体 | 统一 `Result<T>`（code/message/data/traceId）；分页统一 `PageResult<T>` |
-| 鉴权 | `Authorization: Bearer <JWT>` 请求头（不因 POST 变化） |
+| 响应体 | 统一 `Result&lt;T&gt;`（code/message/data/traceId）；分页统一 `PageResult&lt;T&gt;` |
+| 鉴权 | `Authorization: Bearer &lt;JWT&gt;` 请求头（不因 POST 变化） |
 | 幂等 | 写接口携带幂等键（`Idempotency-Key` 头或业务单号字段），支撑防重（NFR-REL-03） |
 | 例外 | 文件上传走 multipart/form-data、文件下载走二进制流，不在 JSON 约定内 |
 | 文档 | OpenAPI 3.x 统一标注 POST；网关限流/日志/审计按路径维度 |
@@ -430,6 +418,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | `eaio_i18n` | i18n |
 
 - **common 无 Schema**：common 为纯代码工具库，不建表、无数据存储，不占用独立 Schema。
+- **mobile 无独立 Schema**：mobile 为网关侧统一入口，复用各业务模块 API 与数据，不建独立业务表。
 - 公共维度：组织/用户/角色等由 `eaio_security`、`eaio_org` 统一承载，业务表通过**组织 ID、用户 ID 外键引用**（逻辑引用，不跨 Schema 建物理外键，避免耦合）。
 - 命名规范：表名 `snake_case` 复数；主键统一 `id BIGINT`（雪花算法）；审计字段 `created_at/created_by/updated_at/updated_by/version` 统一附带。
 
@@ -475,9 +464,10 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **Lombok**：编译期注解处理器（@Data / @Builder / @Slf4j / @RequiredArgsConstructor 等），简化 POJO 与日志样板代码，纳入统一代码规范（需 IDE 插件支持）。
 - **Bean Validation**：jakarta.validation + Hibernate Validator 标准参数校验（@NotNull / @Size / @Valid / 自定义约束），DTO 入参统一校验、校验错误码映射，全模块复用。
 - **MapStruct**：DTO / 实体对象映射编译期生成，替代手写 BeanUtils 反射拷贝（性能敏感与跨模块 DTO 转换场景）。
-- **统一返回体与异常**：`Result<T>` 统一响应、`BusinessException` 与错误码体系（`ErrorCode`）、全局异常处理基础类，供全模块复用。
+- **统一返回体与异常**：`Result&lt;T&gt;` 统一响应、`BusinessException` 与错误码体系（`ErrorCode`）、全局异常处理基础类，供全模块复用。
 - **对外**：以静态工具类 / Spring Bean 形式提供：`ExcelKit`、`RedisKit`、`DistributedLock`、`RateLimiter`、`IdGenerator`、`JsonUtils`、`SecurityUtils`、`SensitiveUtils` 等。
 - **约束**：common 内禁止引入业务模块依赖与业务配置；对外 API 变更需保持向后兼容（被全模块引用）。
+
 ### 5.2 security（认证授权与权限引擎）— 平台底座
 
 **职责**：认证（账号/SSO/LDAP/MFA）、令牌、RBAC/ABAC 授权、母子公司数据权限、字段权限、SoD、权限审计。
@@ -521,7 +511,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 **核心设计**：
 - Flowable 内嵌模式（同库同事务），`workflow` 模块封装流程定义管理、实例管理、任务操作（同意/驳回/转办/加签/撤回/催办）、条件分支、子流程、超时升级。
-- **动态表单绑定**：`form_template`（JSON Schema）与流程变量绑定，审批表单按模板渲染，审批结果回写业务对象。
+- **动态表单绑定**：`form_template`（JSON Schema）与流程变量绑定，审批表单按模板渲染，审批结果回写业务单据。
 - **跨组织流转**：审批节点支持按组织层级动态指定审批人（上级公司/集团角色），支撑母子公司跨层级审批。
 - **统一审批中心**：`approval` 模块聚合全部业务模块审批待办，提供统一入口、分级审批规则（金额/职级/公司）、时效统计。
 - **对外**：`ProcessApi`、`TaskApi`、`FormApi`、`ApprovalApi`；发布 `ApprovalCompletedEvent`。
@@ -885,16 +875,13 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 6. 事件总线可靠性（重试、死信、幂等）具体实现；
 7. 信创数据库适配层（方言抽象）方案。
 
-
-
-
 ---
 
 ## 13. 模块开发顺序与实施计划
 
 ### 13.1 开发顺序总原则
 
-1. **依赖前置（拓扑排序）**：按 11.1 模块依赖矩阵推导开发次序——无依赖者先行，被依赖者先于依赖者落地，顺序为 **common → 平台底座 → 通用业务 → 平台支撑**。
+1. **依赖前置（拓扑排序）**：按 11.1 模块依赖矩阵推导开发次序——无依赖者先行，被依赖者先于依赖者落地，顺序为 **工程骨架（RuoYi 蓝本初始化）→ common → 平台底座 → 通用业务 → 平台支撑**。
 2. **契约先行**：被依赖模块先定义公共 API（接口 + DTO + 事件契约）并冻结版本，实现可与依赖方并行推进；跨模块联调以契约为准。
 3. **关键链路优先**：母子公司权限、双审计、主数据三大引擎最先成型，决定全局架构正确性，后续模块全部复用。
 4. **MVP 闭环**：9 个月内交付"平台底座 + OA + 审批 + 工作流 + 操作审计"可运行 MVP，供种子企业验证后再铺开业务模块。
@@ -904,8 +891,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 | 批次 | 顺序 | 模块 | 前置依赖（来自 11.1） | 里程碑 |
 |------|------|------|----------------------|--------|
-| P0 工程地基 | 1 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体；迁移 ruoyi-common 工具集） | 无 | M0–M1 |
-| P0 工程地基 | 2 | 工程骨架（以 RuoYi-Vue 为蓝本初始化：Modulith 命名空间 + ArchUnit 质量门 + Flyway + CI 流水线 + 统一异常/错误码） | common | M0–M1 |
+| P0 工程地基 | 1 | 工程骨架（以 RuoYi-Vue 为蓝本初始化：Modulith 命名空间 + ArchUnit 质量门 + Flyway + CI 流水线 + 统一异常/错误码） | 无（RuoYi 蓝本工程初始化） | M0–M1 |
+| P0 工程地基 | 2 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体；迁移 ruoyi-common 工具集） | 工程骨架（模块载体，非业务依赖） | M0–M1 |
 | P1 平台底座 | 3 | platform（参数/字典/文件/定时任务/Excel/缓存/监测） | common | M1–M3 |
 | P1 平台底座 | 4 | org（组织与用户） | platform | M2–M4 |
 | P1 平台底座 | 5 | security（认证授权与权限引擎：母子公司） | org | M3–M5 |
@@ -936,13 +923,12 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 > **说明**：行业业务模块（顺序 25）为**扩展模块**，不在 11.1 固定依赖矩阵内，依赖通用能力层全部，按企业定制落地。
 
-
 #### 13.2.1 RuoYi 蓝本改造落点（对应 2.6.1 模块映射）
 
 | 批次 | 顺序 | 改造内容（RuoYi 模块 → e-aio 模块） | 说明 |
 |------|------|--------------------------------------|------|
-| P0 | 1 common | ruoyi-common → common | 迁移 ruoyi-common 工具集：AjaxResult/BaseEntity → Result<T>/PageResult<T>、核心工具（StringUtils/DateUtils/JsonUtils/树形/脱敏/雪花ID）、Redis 工具、安全工具、注解基类；改造为 e-aio 薄封装门面 |
-| P0 | 2 工程骨架 | ruoyi-framework（基础部分）→ 工程骨架 | 以 RuoYi-Vue（前后端分离版）为蓝本搭建：Maven 多模块改造为 Modulith 命名空间、依赖基线（Spring Boot 4.x）、统一异常与错误码、CI 质量门；前端 RuoYi-Vue3 工程同步初始化 |
+| P0 | 1 工程骨架 | ruoyi-framework（基础部分）→ 工程骨架 | 以 RuoYi-Vue（前后端分离版）为蓝本搭建：Maven 多模块改造为 Modulith 命名空间、依赖基线（Spring Boot 4.x）、统一异常与错误码、CI 质量门；前端 RuoYi-Vue3 工程同步初始化 |
+| P0 | 2 common | ruoyi-common → common | 迁移 ruoyi-common 工具集：AjaxResult/BaseEntity → Result/PageResult、核心工具（StringUtils/DateUtils/JsonUtils/树形/脱敏/雪花ID）、Redis 工具、安全工具、注解基类；改造为 e-aio 薄封装门面 |
 | P1 | 3 platform | ruoyi-system（字典/参数/公告）+ ruoyi-quartz → platform | 字典/参数/公告迁移并扩展分级配置；Quartz → Spring Task + ShedLock（Quartz 可选保留） |
 | P1 | 4 org | ruoyi-system（sys_user 用户/部门/岗位）→ org | 用户主档、部门/岗位迁移；组织树升级为无限级（集团-子公司-部门） |
 | P1 | 5 security | ruoyi-framework（SecurityConfig/JWT/拦截器）+ ruoyi-system（角色/菜单/权限）→ security | 认证授权迁移；扩展母子公司多级组织权限（组织树/数据权限/SoD） |
@@ -951,12 +937,11 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | P1 | 10 portal | ruoyi-ui（RuoYi-Vue3 前端工程）→ portal + 前端工程 | 保留菜单/路由/权限指令/字典/水印组件；扩展配置化渲染与移动端 H5 |
 | 贯穿 | — | ruoyi-generator → devtools | 保留代码生成器为开发工具链，服务 Vibe Coding（不入运行时） |
 
-
 ### 13.3 批次验收标准
 
 | 批次 | 验收标准 |
 |------|----------|
-| P0 | common 全部工具单测通过；工程骨架 CI 绿灯、ArchUnit 验证通过、Flyway 迁移可运行 |
+| P0 | 工程骨架 CI 绿灯、ArchUnit 验证通过、Flyway 迁移可运行；common 全部工具单测通过 |
 | P1 | 母子公司权限 E2E（组织树/数据权限/SoD/跨公司审批）通过；操作审计 WORM + 哈希链校验验证；工作流+审批全链路跑通；MVP 种子企业试用反馈 |
 | P2 | 业务闭环 E2E：合同→应收、出库→凭证、采购→入库→对账；财务审计（账实相符/四流合一）通过；2,000 并发性能测试达标 |
 | P3 | OpenAPI 对外集成联调通过；移动端 H5 上线；多语言多币种切换验证；行业模块模板沉淀 ≥ 1 套 |
@@ -972,7 +957,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | 项目里程碑（可研 7.1） | 开发队列 | 交付 |
 |--------------------------|----------|------|
 | 阶段 0（M0–M2）技术预研 | P0 + P1 启动 | Modulith 骨架、配置化定制 PoC、AI PoC、立项评审 |
-| 阶段 1（M2–M9）MVP | P1 完成（顺序 1–10） | 平台底座 + OA + 审批 + 权限 + 工作流 + 操作审计 MVP |
+| 阶段 1（M2–M9）MVP | P0 + P1 完成（顺序 1–10） | 平台底座 + OA + 审批 + 权限 + 工作流 + 操作审计 MVP |
 | 阶段 2（M9–M24）业务闭环 | P2 完成（顺序 11–21） | CRM/库存/财务（含财务审计）/HRM/SCM/报表，商机→合同→履约→回款闭环 |
 | 阶段 3（M24–M36）平台化 | P3 完成（顺序 22–25） | 开放平台/移动端/多语言多币种，行业解决方案与社区生态 |
 
