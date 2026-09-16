@@ -270,13 +270,23 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | 维度 | 约定 |
 |------|------|
 | 协议 | HTTP/HTTPS，统一 POST，`Content-Type: application/json` |
-| URL 风格 | `/api/<module>/<resource>/<action>` 动词化路径（如 `POST /api/crm/customer/page`、`POST /api/crm/customer/create`、`POST /api/crm/customer/delete`） |
+| URL 风格 | `/api/<module>/<resource>/<action>`，动作体现在接口名中（动作词规约见下），如 `POST /api/crm/customer/Get`、`POST /api/crm/customer/Add`、`POST /api/crm/customer/Up`、`POST /api/crm/customer/Del` |
 | 请求体 | 全部参数（条件/分页/排序/ID 等）置于 JSON body，查询与写操作一致 |
 | 响应体 | 统一 `Result<T>`（code/message/data/traceId）；分页统一 `PageResult<T>` |
 | 鉴权 | `Authorization: Bearer <JWT>` 请求头（不因 POST 变化） |
 | 幂等 | 写接口携带幂等键（`Idempotency-Key` 头或业务单号字段），支撑防重（NFR-REL-03） |
 | 例外 | 文件上传走 multipart/form-data、文件下载走二进制流，不在 JSON 约定内 |
 | 文档 | OpenAPI 3.x 统一标注 POST；网关限流/日志/审计按路径维度 |
+
+**动作词规约**（接口名 action 段统一英文，基础动作固定缩写）：
+
+| 动作词 | 含义 | 典型接口示例 |
+|--------|------|--------------|
+| Get | 查询（单条/分页/列表） | `POST /api/crm/customer/Get`、`POST /api/crm/customer/GetPage` |
+| Add | 新增/创建 | `POST /api/crm/customer/Add` |
+| Up | 更新/修改 | `POST /api/crm/customer/Up` |
+| Del | 删除（逻辑删除优先） | `POST /api/crm/customer/Del` |
+| 业务动作 | 模块自定义，统一英文动词 | `Submit`（提交）、`Approve`（审批）、`Export`（导出）、`Import`（导入）、`Audit`（审计查询）等 |
 
 > **理由**：统一 POST + JSON 简化前端单一封装、规避 QueryString 编码与长度问题、便于网关统一过滤与审计；代价是非标准 REST 语义（缓存/幂等需显式处理），由幂等键与统一错误码兜底。
 
