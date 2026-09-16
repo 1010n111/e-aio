@@ -229,7 +229,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 
 ### 2.6 实现蓝本：基于 RuoYi（Apache-2.0）重写
 
-为加速平台底座落地，e-aio **以 RuoYi-Vue 为代码蓝本**（Apache-2.0 许可，可合规复用），在保留其成熟系统管理功能集的前提下，用 **Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体**。RuoYi 官方 master 分支已基于 Spring Boot 4.x（JDK 17+），与 e-aio 技术基线一致，可平滑移植并模块化改造。
+e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版）** 为代码蓝本（Apache-2.0 许可，可合规复用）：后端为 Spring Modulith 模块化单体（RESTful API + JWT 认证），前端为独立工程（Vue3）。在保留 RuoYi 成熟系统管理功能集的前提下，用 **Spring Boot 4.x + Spring Modulith 2.x 重构后端为模块化单体**。RuoYi-Vue 官方 master 分支已基于 Spring Boot 4.x（JDK 17+），与 e-aio 技术基线一致，可平滑移植并模块化改造。
 
 #### 2.6.1 RuoYi → e-aio 模块映射
 
@@ -243,7 +243,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 | ruoyi-system | 操作日志 / 登录日志 | audit | 升级为 WORM 防篡改双审计 |
 | ruoyi-quartz | 定时任务 | platform（Scheduler） | Spring Task + ShedLock，保留 Quartz 可选 |
 | ruoyi-generator | 代码生成 | devtools（开发工具链） | 服务 Vibe Coding，不入运行时 |
-| ruoyi-ui | Vue 管理界面 | portal + 前端工程 | 保留菜单/权限前端框架，扩展配置化渲染 |
+| ruoyi-ui（RuoYi-Vue3 前端工程） | Vue3 + Vite + Element Plus 管理界面 | portal + 前端工程 | 前后端分离：RESTful API 交互；保留菜单/路由/权限指令，扩展配置化渲染与移动端 |
 
 #### 2.6.2 重写技术要点
 
@@ -255,7 +255,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 | 审计 | 操作日志（AOP + 表） | audit 模块：升级 WORM 防篡改 + 财务专项审计双体系 |
 | 定时任务 | Quartz | platform Scheduler：Spring Task + ShedLock 分布式锁，Quartz 可选保留 |
 | 代码生成 | ruoyi-generator | 保留为开发工具（devtools），辅助 Vibe Coding 生成模块骨架 |
-| 前端 | Vue + Element | portal：保留菜单/路由/权限指令，扩展配置化渲染与移动端 |
+| 前端工程 | RuoYi-Vue3（Vue3 + Vite + Element Plus，独立仓库） | 前后端分离独立工程：保留路由/权限指令/字典/水印组件，扩展配置化渲染引擎与移动端 H5 |
 
 #### 2.6.3 复用边界（许可证与合规）
 
