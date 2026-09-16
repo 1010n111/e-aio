@@ -441,9 +441,9 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 **核心设计**：
 
-- **Excel 工具（ExcelKit）**：基于 EasyExcel / Apache POI 封装流式读写、样式、多 Sheet、大数据量导出（10 万 + 行）、导入解析与错误定位；为 platform 的 Excel 导入导出服务（FR-PLT-05）及全部业务模块提供底层能力。
+- **Excel 工具（ExcelKit）**：基于 **Apache Fesod**（原 FastExcel / EasyExcel 生态，Apache 孵化，Apache-2.0）封装流式读写、样式、多 Sheet、大数据量导出（10 万 + 行）、导入解析与错误定位；为 platform 的 Excel 导入导出服务（FR-PLT-05）及全部业务模块提供底层能力。
 - **Redis 工具（RedisKit）**：RedisTemplate / Redisson 封装：缓存读写、分布式锁、限流器、轻量队列；支撑缓存管理（FR-PLT-07）与定时任务分布式锁防重（ShedLock 兼容）。
-- **通用工具类**：以 **Hutool** 为基础工具库底座（字符串/日期/集合/IO/加密/树形/Excel 等），在其上做薄封装形成 e-aio 统一工具门面（DateUtils、StringUtils、CollectionUtils、JsonUtils（Jackson）、BeanUtils、树形工具、脱敏工具、雪花 ID 生成器等），避免重复造轮子。
+- **通用工具类**：以 **Hutool** 为基础工具库底座（字符串/日期/集合/IO/加密/树形等），在其上做薄封装形成 e-aio 统一工具门面（DateUtils、StringUtils、CollectionUtils、JsonUtils（Jackson）、BeanUtils、树形工具、脱敏工具、雪花 ID 生成器等），避免重复造轮子。
 - **Lombok**：编译期注解处理器（@Data / @Builder / @Slf4j / @RequiredArgsConstructor 等），简化 POJO 与日志样板代码，纳入统一代码规范（需 IDE 插件支持）。
 - **Bean Validation**：jakarta.validation + Hibernate Validator 标准参数校验（@NotNull / @Size / @Valid / 自定义约束），DTO 入参统一校验、校验错误码映射，全模块复用。
 - **MapStruct**：DTO / 实体对象映射编译期生成，替代手写 BeanUtils 反射拷贝（性能敏感与跨模块 DTO 转换场景）。
@@ -517,7 +517,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 **核心设计**：
 - **定时任务**：Spring Task + ShedLock 分布式锁；任务注册/启停/日志；支持 cron、失败重试、告警（关联 system 监测）。
-- **Excel 导入导出**：EasyExcel 流式读写（10 万+行）；模板管理、字段校验、错误回显、异步导入任务 + 进度。
+- **Excel 导入导出**：Apache Fesod 流式读写（10 万+行）；模板管理、字段校验、错误回显、异步导入任务 + 进度。
 - **缓存管理**：Caffeine（本地）+ Redis（分布式）两级缓存；缓存键规范与变更失效事件；穿透/击穿/雪崩防护（空值缓存、互斥重建、随机过期）。
 - **系统监测**：Actuator 指标 → Prometheus 采集 → Grafana 看板；日志（结构化）+ 链路（Micrometer Tracing）；告警规则（内存/线程/慢 SQL/任务失败）。
 - **文件存储**：对象存储适配（MinIO/S3/本地盘），预签名 URL，文件权限与审计。
@@ -832,7 +832,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | OpenSearch | 全文检索 | Apache-2.0 |
 | ClickHouse | 数仓 / BI | Apache-2.0 |
 | Flowable | 工作流引擎 | Apache-2.0 |
-| EasyExcel / Apache POI | Excel 导入导出 | Apache-2.0 |
+| Apache Fesod（原 FastExcel / EasyExcel 生态，Apache 孵化） | Excel 导入导出（高性能流式读写） | Apache-2.0 |
 | PaddleOCR / Tesseract | OCR | Apache-2.0 |
 | Quartz / ShedLock | 定时任务 / 分布式锁 | Apache-2.0 |
 | Prometheus / Grafana | 监控告警 | Apache-2.0 |

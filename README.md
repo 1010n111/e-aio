@@ -37,7 +37,7 @@
 | **供应链 SCM**  | 采购、供应商、到货、对账、采购审计                      |
 | **工作流**      | 流程建模、审批流、条件分支、子流程、超时升级、跨组织流转           |
 | **审批**       | 统一审批中心、分级审批、母子公司跨层级审批                  |
-| **权限**       | RBAC+ABAC 混合、母子公司多级组织、多组织挂载、组织生命周期、数据权限、字段级权限、SoD |
+| **权限**       | RBAC+ABAC 混合、多级组织、多组织挂载、组织生命周期、数据权限、字段级权限、SoD |
 | **审计**       | 系统操作审计 + 财务专项审计双体系，账实相符 / 四流合一 / 费用合规    |
 | **报表 BI**    | 报表引擎、数据看板、集团汇总、多维分析、定时报表               |
 | **AI 能力**    | 大模型网关、RAG 知识问答、OCR、智能填单 / 审单 / 风控、Agent 编排 |
@@ -62,7 +62,7 @@
 | **数据库**        | PostgreSQL（开源，主库，事务强一致）                                                |
 | **缓存**         | Redis（开源，分布式）+ Caffeine（开源，本地二级缓存）                                     |
 | **定时任务**       | Quartz / XXL-JOB（开源）或 Spring Task + ShedLock                           |
-| **Excel 导入导出** | Apache POI / EasyExcel（阿里开源）                                           |
+| **Excel 导入导出** | Apache Fesod（原 FastExcel / EasyExcel 生态，Apache-2.0）                                           |
 | **OCR**        | PaddleOCR / Tesseract（开源）                                              |
 | **系统监测**       | Spring Boot Actuator + Prometheus + Grafana（开源）                        |
 | **搜索**         | OpenSearch / Elasticsearch（开源）                                         |

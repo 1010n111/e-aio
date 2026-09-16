@@ -232,7 +232,7 @@
 | 数据库 | PostgreSQL（开源，主库，事务强一致）+ Redis（开源，缓存/会话） |
 | 缓存 | Redis（开源，分布式缓存）+ Caffeine（开源，本地缓存，二级缓存） |
 | 定时任务 | Quartz / XXL-JOB（开源）或 Spring Task + ShedLock（分布式锁防重） |
-| Excel 导入导出 | Apache POI / EasyExcel（阿里开源，流式低内存读写） |
+| Excel 导入导出 | Apache Fesod（原 FastExcel / EasyExcel 生态，Apache-2.0，流式低内存读写） |
 | OCR | PaddleOCR / Tesseract（开源，票据/合同/证件识别） |
 | 系统监测 | Spring Boot Actuator + Prometheus + Grafana（均开源，指标/告警/监控） |
 | 搜索 | OpenSearch / Elasticsearch（开源） |
@@ -273,7 +273,7 @@
 | 模块化单体 | **Spring Boot 4.1.x + Spring Modulith 2.1.x**（开源） | 高（官方支持） | 模块事件解耦、Schema 隔离 |
 | 工作流 | Flowable（开源，Apache-2.0）二次封装 | 高 | 动态表单与流程变量绑定 |
 | 定时任务 | Quartz / XXL-JOB（开源）或 Spring Task + ShedLock | 高 | 分布式锁防重、批量任务调度 |
-| Excel 导入导出 | Apache POI / EasyExcel（开源） | 高 | 海量数据流式读写、模板化导出 |
+| Excel 导入导出 | Apache Fesod（原 FastExcel / EasyExcel 生态，开源） | 高 | 海量数据流式读写、模板化导出 |
 | OCR | PaddleOCR / Tesseract（开源） | 中高 | 票据/合同识别准确率、单据入账 |
 | 缓存 | Redis（开源，分布式）+ Caffeine（本地二级缓存） | 高 | 多级缓存一致性、缓存穿透防护 |
 | 系统监测 | Spring Boot Actuator + Prometheus + Grafana（开源） | 高 | 指标采集、告警、运行健康度 |
