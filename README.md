@@ -14,7 +14,7 @@
 
 | 维度                   | 说明                                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------- |
-| **通用能力大一统**          | OA / CRM / 库存 / 财务 / HRM / 项目管理 / 供应链 / 工作流 / 审批 / 权限 / 审计 / 报表 BI / AI / 门户消息，共 22 大功能模块一体集成 |
+| **通用能力大一统**          | OA / CRM / 库存 / 财务 / HRM / 项目管理 / 供应链 / 工作流 / 审批 / 权限 / 审计 / 报表 BI / AI / 门户消息，共 22 个模块（21 大功能模块 + common 技术底座）一体集成 |
 | **平台底座**     | 参数配置、数据字典、统一文件存储、定时任务、Excel 导入导出、缓存、系统监测、消息模板 |
 | **业务按需定制**           | 主数据与配置化能力（规则 / 表单 / 报表配置），企业可按自身业务流程定制，无需二次开发即可快速落地                                         |
 | **母子公司集团架构**         | 无限级组织树，子公司数据隔离、集团统一管控 / 子公司自治、角色继承与覆盖、跨公司审批与审计、职责分离（SoD）                                       |
@@ -58,7 +58,7 @@
 | 层              | 选型                                                                     |
 | -------------- | ---------------------------------------------------------------------- |
 | **语言 / 框架**    | Java 21（或更新 LTS）+ **Spring Boot 4.1.x + Spring Modulith 2.1.x**（开源）    |
-| **工具库**       | Lombok / Hutool / Bean Validation / MapStruct（开源）
+| **工具库**       | Lombok / Hutool / Bean Validation / MapStruct（开源）|
 | **前端**         | Vue 3 + Vite + Element Plus（RuoYi-Vue3 蓝本，开源）+ 配置化渲染引擎                                             |
 | **数据库**        | PostgreSQL（开源，主库，事务强一致）                                                |
 | **缓存**         | Redis（开源，分布式）+ Caffeine（开源，本地二级缓存）                                     |
@@ -73,7 +73,7 @@
 | **原生编译**       | GraalVM Native Image（可选：原生可执行文件、秒级启动；默认 JVM 运行）                             |
 | **权限**         | Spring Security（开源）+ 自研多级组织权限引擎                                        |
 | **构建 / CI**    | Maven/Gradle（开源）+ GitHub Actions                                       |
-| **API 对接**    | RESTful 风格，统一 POST + JSON（含查询/删除/导出）
+| **API 对接**    | RESTful 风格，统一 POST + JSON（含查询/删除/导出）|
 
 > **开源优先原则**
 >
@@ -88,7 +88,7 @@
 本项目**不采用微服务架构**，采用 **Spring Modulith 模块化单体**：
 
 * **基于 RuoYi 蓝本**：以 RuoYi-Vue 前后端分离版（MIT）为代码蓝本，后端用 Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体，前端基于 RuoYi-Vue3（Vue3 + Vite + Element Plus），叠加母子公司权限 / 双审计 / 主数据 / AI
-* **模块边界**：按业务域划分模块（`oa`、`crm`、`inventory`、`finance`、`workflow`、`audit`、`security`、`approval`、`ai`、`hr`、`project`、`scm`、`report`、`portal`、`mdm`、`marketing`、`service`、`fund`、`integration`、`mobile`、`i18n`），模块间通过明确公共 API 交互
+* **模块边界**：按业务域划分模块（`platform`、`iam`、`audit`、`workflow+approval`、`mdm`、`report`、`ai`、`oa`、`crm`、`inventory`、`finance`、`hr`、`project`、`scm`、`marketing`、`service`、`fund`、`portal`、`integration`、`mobile`、`i18n`），模块间通过明确公共 API 交互
 * **业务模块调用通用能力**：业务模块（按企业定制）单向调用通用能力（流程 / 权限 / 审计 / 报表 / AI 等），依赖方向为"业务模块 → 通用能力"，禁止反向依赖
 
 * **依赖单向**：依赖方向清晰，禁止循环依赖，ArchUnit 强制校验
