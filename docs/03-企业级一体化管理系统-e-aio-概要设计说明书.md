@@ -31,12 +31,12 @@ related:
 
 ## 核心结论（执行摘要）
 
-本文档在可研与 SRS 基础上，完成 e-aio 的**概要设计**：确定以 **Spring Modulith 模块化单体**为架构形态，划定 **23 个模块（22 个业务/能力模块 + common 技术底座）**及其边界、依赖方向与交互机制；确定**通用能力层与业务模块层分层、单向依赖**的总体结构；确定**母子公司多级权限**、**双审计**、**主数据共享访问**三大核心引擎的设计方案；确定接口、数据结构、运行、出错处理、安全保密与部署运维方案。本设计可作为详细设计、编码、测试与验收的依据。
+本文档在可研与 SRS 基础上，完成 e-aio 的**概要设计**：确定以 **Spring Modulith 模块化单体**为架构形态，划定 **22 个模块（21 个业务/能力模块 + common 技术底座）**及其边界、依赖方向与交互机制；确定**通用能力层与业务模块层分层、单向依赖**的总体结构；确定**母子公司多级权限**、**双审计**、**主数据共享访问**三大核心引擎的设计方案；确定接口、数据结构、运行、出错处理、安全保密与部署运维方案。本设计可作为详细设计、编码、测试与验收的依据。
 
 | 设计主题 | 关键决策 |
 |------|----------|
 | 架构形态 | Spring Modulith 模块化单体，单一可执行产物，不采用微服务 |
-| 模块划分 | 23 个模块（22 个功能模块 + common 技术底座），独立 Schema，应用层接口访问 |
+| 模块划分 | 22 个模块（21 个功能模块 + common 技术底座），独立 Schema，应用层接口访问 |
 | 依赖方向 | 业务模块层 → 通用能力层，禁止反向依赖，ArchUnit 强制校验 |
 | 模块协作 | 同步走模块公共 API；异步走 Spring 应用事件（事务事件监听器） |
 | 主数据 | 模块内共享访问（实时、事务内强一致），变更发事件驱动副作用，仅跨系统边界才分发 |
@@ -122,7 +122,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 │                  配置化定制引擎（元数据 / 规则 / 表单）          │
 ├────────────────────────────────────────────────────────────┤
 │            Spring Modulith 模块化单体（Spring Boot 4.x）      │
-│   security │ org │ audit │ workflow │ mdm │ report │ ai │ …  │
+│      iam │ audit │ workflow │ mdm │ report │ ai │ …      │
 ├────────────────────────────────────────────────────────────┤
 │                  数据与基础设施（开源组件）                     │
 │  PostgreSQL │ Redis │ OpenSearch │ ClickHouse │ 向量库 │ 对象存储 │
@@ -160,13 +160,12 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 
 ### 2.3 模块划分
 
-系统划分为 **23 个模块**：22 个功能模块与 SRS 3.1–3.22 一一对应，另含 **common（技术底座）**，按职责归为四类（技术底座 / 平台底座 / 通用业务 / 平台支撑）：
+系统划分为 **22 个模块**：21 个功能模块与 SRS 3.1–3.22 一一对应（其中 FR-SEC 与组织用户能力合并为 iam），另含 **common（技术底座）**，按职责归为四类（技术底座 / 平台底座 / 通用业务 / 平台支撑）：
 
 | 类别 | 模块 | 对应 SRS |
 |------|------|----------|
 | 技术底座 | common（通用工具库：Excel / Redis / 通用工具类） | 全局横切（无业务需求） |
-| 平台底座 | security（认证授权与权限引擎） | 3.1 FR-SEC |
-| 平台底座 | org（组织与用户） | 3.10 FR-HR-06/07/08、3.1 FR-SEC-05 |
+| 平台底座 | iam（身份与访问管理：组织/用户/认证授权/权限引擎） | 3.1 FR-SEC、3.10 FR-HR-06/07/08、3.1 FR-SEC-05 |
 | 平台底座 | audit（双审计） | 3.2 FR-AUD |
 | 平台底座 | workflow（工作流引擎）+ approval（审批中心） | 3.3 FR-WF、3.4 FR-APR |
 | 平台底座 | mdm（主数据管理） | 3.5 FR-MDM |
@@ -188,14 +187,14 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 | 平台支撑 | mobile（移动端） | 3.20 FR-MOB |
 | 平台支撑 | i18n（多语言多币种） | 3.21 FR-I18N |
 
-> **说明**：SRS 中"人力资源 HRM"的组织架构能力（FR-HR-01/02）划入 `org` 模块统一支撑权限与通讯录，`hr` 模块承载考勤/薪酬/招聘/绩效等事务能力；两模块通过公共 API 协作。
+> **说明**：SRS 中"人力资源 HRM"的组织架构能力（FR-HR-01/02）划入 `iam` 模块统一支撑权限与通讯录，`hr` 模块承载考勤/薪酬/招聘/绩效等事务能力；两模块通过公共 API 协作。
 
 ### 2.4 模块间交互机制
 
 #### 2.4.1 依赖方向与分层
 
 - **技术底座层**（common）：无状态通用工具库（Excel 工具、Redis 工具、通用工具类、ID 生成、统一返回体等），不依赖任何模块，被所有模块依赖。
-- **通用能力层**（platform/security/audit/workflow/mdm/report/ai 等）彼此独立或仅依赖平台底座，不依赖任何业务模块。
+- **通用能力层**（platform/iam/audit/workflow/mdm/report/ai 等）彼此独立或仅依赖平台底座，不依赖任何业务模块。
 - **业务模块层**（oa/crm/inventory/finance/hr/project/scm/marketing/service/fund）单向依赖通用能力层，**禁止反向依赖**。
 - **平台支撑层**（portal/integration/mobile/i18n）面向接入与集成，仅依赖通用能力层。
 - ArchUnit 依赖规则固化：`业务模块 → 通用能力`，任何反向边在 CI 中失败。
@@ -244,10 +243,10 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | RuoYi 模块 | RuoYi 功能 | e-aio Modulith 模块 | 改造要点 |
 |-----------|-----------|---------------------|----------|
 | ruoyi-common | 常量、AjaxResult/BaseEntity、核心工具、Redis 工具、安全工具、注解 | common | 工具下沉 common；注解与 AOP 基类归 platform |
-| ruoyi-framework | SecurityConfig、JWT、拦截器、AOP（操作日志/防重）、Web 配置 | security + audit + platform | 认证授权归 security；操作日志归 audit；拦截器/配置归 platform |
-| ruoyi-system | 用户主档（sys_user） | org | 用户主档（账号/姓名/状态/多组织挂载）归 org，与 5.3 一致；密码凭证与登录策略（MFA/SSO）归 security |
-| ruoyi-system | 角色 / 菜单 / 权限 | security | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
-| ruoyi-system | 部门 / 岗位 | org | 组织树升级为无限级（集团-子公司-部门） |
+| ruoyi-framework | SecurityConfig、JWT、拦截器、AOP（操作日志/防重）、Web 配置 | iam + audit + platform | 认证授权归 iam；操作日志归 audit；拦截器/配置归 platform |
+| ruoyi-system | 用户主档（sys_user） | iam | 用户主档（账号/姓名/状态/多组织挂载）与密码凭证、登录策略（MFA/SSO）统一归 iam |
+| ruoyi-system | 角色 / 菜单 / 权限 | iam | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
+| ruoyi-system | 部门 / 岗位 | iam | 组织树升级为无限级（集团-子公司-部门） |
 | ruoyi-system | 字典 / 参数 / 公告 | platform | 保留并扩展分级配置 |
 | ruoyi-system | 操作日志 / 登录日志 | audit | 升级为 WORM 防篡改双审计 |
 | ruoyi-quartz | 定时任务 | platform（Scheduler） | Spring Task + ShedLock，保留 Quartz 可选 |
@@ -260,7 +259,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 |------|-----------|----------------|
 | 架构形态 | 经典单体（多 Maven 模块，运行时单进程） | Spring Modulith 模块化单体：模块边界 + 公共 API + 事件解耦，ArchUnit 校验 |
 | 持久层 | MyBatis / MyBatis-Plus + Druid | 保留 MyBatis-Plus（PostgreSQL 适配），模块级 Mapper 限定本模块 Schema |
-| 认证授权 | Spring Security + JWT + Redis | security 模块：保留 JWT/SSO 能力，扩展母子公司多级权限、数据权限、SoD |
+| 认证授权 | Spring Security + JWT + Redis | iam 模块：保留 JWT/SSO 能力，扩展母子公司多级权限、数据权限、SoD |
 | 审计 | 操作日志（AOP + 表） | audit 模块：升级 WORM 防篡改 + 财务专项审计双体系 |
 | 定时任务 | Quartz | platform Scheduler：Spring Task + ShedLock 分布式锁，Quartz 可选保留 |
 | 代码生成 | ruoyi-generator | 保留为开发工具（devtools），辅助 Vibe Coding 生成模块骨架 |
@@ -307,7 +306,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | OpenAPI | RESTful（统一 POST + JSON，OpenAPI 3.x 文档） | 第三方 / 二次开发集成；鉴权（OAuth2 Client Credentials / API Key）、限流、日志 | integration |
 | Webhook | HTTPS POST + 签名（HMAC-SHA256） | 业务事件推送外部系统，重试 + 幂等 | integration |
 | 大模型 API | OpenAI 兼容协议 | 接入企业自有或第三方大模型（可配多个） | ai |
-| SSO/LDAP | SAML2 / OIDC / LDAP | 企业统一身份认证对接 | security |
+| SSO/LDAP | SAML2 / OIDC / LDAP | 企业统一身份认证对接 | iam |
 | 消息推送 | 企微/钉钉/邮件/SMS 适配器 | 通知推送渠道 | portal |
 | 对象存储 | S3 兼容协议 | 文件存储（MinIO/公有云 OSS） | platform |
 | 电子签章 | 第三方 CA 服务 API | 合同在线签署 | crm |
@@ -316,8 +315,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 
 | 提供方 | 接口（概要） | 消费方 |
 |--------|--------------|--------|
-| security | `AuthnApi`（登录/SSO/令牌）、`PermissionApi`（鉴权/数据权限过滤）、`RoleApi`、`SoDCheckApi` | 全部模块 |
-| org | `OrgApi`（组织树）、`UserApi`（用户/岗位）、`EmployeeApi` | 全部模块 |
+| iam | `AuthnApi`（登录/SSO/令牌）、`PermissionApi`（鉴权/数据权限过滤）、`RoleApi`、`SoDCheckApi`、`OrgApi`（组织树）、`UserApi`（用户/岗位）、`EmployeeApi` | 全部模块 |
 | audit | `AuditApi`（写审计事件）、`AuditQueryApi`（查询/报表） | 全部模块 |
 | workflow | `ProcessApi`（发起/流转/催办/撤回）、`FormApi`（表单绑定） | 全部业务模块 |
 | approval | `ApprovalApi`（统一审批中心聚合） | 全部业务模块 |
@@ -339,8 +337,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 | VoucherPostedEvent | finance | audit、report | 财务审计留痕、报表更新 |
 | MasterDataChangedEvent | mdm | 各模块 | 缓存刷新、索引同步、对外同步 |
 | ApprovalCompletedEvent | approval | 发起模块 | 业务状态推进、通知 |
-| UserRoleChangedEvent | 用户、角色、变更类型 | audit | AFTER_COMMIT |
-| UserRoleChangedEvent | security | audit | 权限审计留痕 |
+| UserRoleChangedEvent | iam（用户、角色、变更类型） | audit | 权限审计留痕，AFTER_COMMIT |
 | PaymentCompletedEvent | fund | finance、crm | 应收核销、回款更新 |
 | DocUploadedEvent | oa | ai | 知识库索引、RAG 更新 |
 
@@ -348,7 +345,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 
 - **统一工作台**：门户框架（导航/菜单/待办聚合/消息中心）+ 各模块页面按菜单注册挂载；支持配置化动态渲染（菜单、列表、表单按元数据渲染）。
 - **响应式**：桌面 Web + 移动端 H5；移动端经同一套 OpenAPI 与后端交互。
-- **权限驱动渲染**：菜单/按钮/字段级可见性由 security 下发，前端不硬编码权限。
+- **权限驱动渲染**：菜单/按钮/字段级可见性由 iam 下发，前端不硬编码权限。
 - **主题与国际化**：i18n 模块提供语言包与币种汇率，界面可切换。
 
 ---
@@ -357,7 +354,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 
 ### 4.1 逻辑结构设计（核心领域实体）
 
-#### 4.1.1 组织与权限域（security / org）
+#### 4.1.1 组织与权限域（iam）
 
 ```
 组织节点(org_node) ─┬─ 类型: 集团/公司/部门/团队
@@ -416,8 +413,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 | Schema | 模块 |
 |--------|------|
-| `eaio_security` | security |
-| `eaio_org` | org |
+| `eaio_iam` | iam |
 | `eaio_audit` | audit |
 | `eaio_wf` | workflow、approval |
 | `eaio_mdm` | mdm |
@@ -440,7 +436,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 - **common 无 Schema**：common 为纯代码工具库，不建表、无数据存储，不占用独立 Schema。
 - **mobile 无独立 Schema**：mobile 为网关侧统一入口，复用各业务模块 API 与数据，不建独立业务表。
-- 公共维度：组织/用户/角色等由 `eaio_security`、`eaio_org` 统一承载，业务表通过**组织 ID、用户 ID 外键引用**（逻辑引用，不跨 Schema 建物理外键，避免耦合）。
+- 公共维度：组织/用户/角色等由 `eaio_iam` 统一承载，业务表通过**组织 ID、用户 ID 外键引用**（逻辑引用，不跨 Schema 建物理外键，避免耦合）。
 - 命名规范：表名 `snake_case` 复数；主键统一 `id BIGINT`（雪花算法）；审计字段 `created_at/created_by/updated_at/updated_by/version` 统一附带。
 
 ### 4.3 数据存储分工
@@ -489,31 +485,23 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **对外**：以静态工具类 / Spring Bean 形式提供：`ExcelKit`、`RedisKit`、`DistributedLock`、`RateLimiter`、`IdGenerator`、`JsonUtils`、`SecurityUtils`、`SensitiveUtils` 等。
 - **约束**：common 内禁止引入业务模块依赖与业务配置；对外 API 变更需保持向后兼容（被全模块引用）。
 
-### 5.2 security（认证授权与权限引擎）— 平台底座
+### 5.2 iam（身份与访问管理）— 平台底座
 
-**职责**：认证（账号/SSO/LDAP/MFA）、令牌、RBAC/ABAC 授权、母子公司数据权限、字段权限、SoD、权限审计。
+**职责**：组织节点、岗位、用户主档、员工任职、认证（账号/SSO/LDAP/MFA）、令牌、RBAC/ABAC 授权、母子公司数据权限、字段权限、SoD、权限审计、通讯录。原 security 与 org 合并为 iam，因用户-角色-组织-权限天然紧耦合，拆分为两个模块会产生大量跨模块调用与事件。
 
 **核心设计**：
 - **认证**：Spring Security + OAuth2 Authorization Server（自托管）；JWT（短期）+ Redis 会话（可撤销）；SSO（SAML2/OIDC）、LDAP 适配器；登录失败锁定、防暴力破解。
 - **组织权限模型**：组织树（`org_node` 无限级，类型：集团/公司/部门/团队）；用户可多组织挂载；数据行级权限由 `数据范围规则` 生成 SQL 过滤条件（本人/本部门/本组织/本组织及下级/全集团/自定义）。
+- **组织管理**：组织树闭包表（`org_node_path`）加速子树查询；组织生命周期状态机（筹备→运营→注销→归档），注销触发权限清理（模块内部协同）；员工任职与组织节点关联，支撑“兼任多组织”。
 - **ABAC**：属性策略引擎（用户属性、数据属性、环境属性），规则可配置；ABAC 作为 RBAC 的补充（高安全场景）。
 - **字段权限**：字段级可见/可编辑矩阵（角色 × 字段），前端渲染 + 后端 DTO 裁剪双重控制。
-- **SoD**：互斥权限组配置（如"创建合同"与"审核合同"），角色分配与任务指派时校验冲突。
+- **SoD**：互斥权限组配置（如“创建合同”与“审核合同”），角色分配与任务指派时校验冲突。
 - **集团管控/子公司自治**：权限策略可配置为集团统一下发或子公司自主；角色继承与覆盖。
-- **对外**：`AuthnApi`、`PermissionApi`、`RoleApi`、`DataScopeApi`、`SoDCheckApi`、`TenantCtxProvider`（当前组织上下文，全模块使用）。
+- **对外**：`AuthnApi`、`PermissionApi`、`RoleApi`、`DataScopeApi`、`SoDCheckApi`、`TenantCtxProvider`（当前组织上下文，全模块使用）、`OrgApi`（树查询/子树/路径）、`UserApi`、`EmployeeApi`、`OrgLifecycleApi`。
 
 **关键流程**：登录 → 令牌签发 → 请求鉴权（认证→授权→数据权限过滤）→ 操作审计切面记录。
 
-### 5.3 org（组织与用户）— 平台底座
-
-**职责**：组织节点、岗位、用户主档、员工任职管理；组织生命周期（成立/合并/注销）；通讯录。
-**边界**：用户主档（账号/姓名/状态/多组织挂载）在 org；密码凭证、MFA/SSO 绑定与登录策略在 security；角色/菜单/权限点在 security。
-
-**核心设计**：组织树闭包表（`org_node_path`）加速子树查询；组织生命周期状态机（筹备→运营→注销→归档），注销触发权限清理（协同 security）；员工任职与组织节点关联，支撑"兼任多组织"。
-
-**对外**：`OrgApi`（树查询/子树/路径）、`UserApi`、`EmployeeApi`、`OrgLifecycleApi`。
-
-### 5.4 audit（双审计引擎）— 平台底座
+### 5.3 audit（双审计引擎）— 平台底座
 
 **职责**：系统操作审计 + 财务专项审计。
 
@@ -526,7 +514,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 **关键流程**：业务操作 → 切面采集 → 审计事件写入（同事务）→ 哈希链计算 → 归档。
 
-### 5.5 workflow（工作流引擎）+ approval（审批中心）— 平台底座
+### 5.4 workflow（工作流引擎）+ approval（审批中心）— 平台底座
 
 **职责**：流程建模、流转控制、动态表单绑定、跨组织流转、统一审批中心。
 
@@ -539,7 +527,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 **关键流程**：业务发起（调 ProcessApi）→ 流程实例创建 → 审批任务流转（含跨组织）→ 完成 → 事件回写业务状态。
 
-### 5.6 mdm（主数据管理）— 平台底座
+### 5.5 mdm（主数据管理）— 平台底座
 
 **职责**：主数据类型/编码/属性/分类建模，主数据全生命周期（草稿→待审→生效→停用→归档），查重合并，共享访问与对外集成。
 
@@ -551,7 +539,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **分级维护**：集团统一主数据（如科目体系）与子公司局部主数据（如物料扩展属性）按组织控制维护范围。
 - **对外**：`MasterDataApi`、`MdTypeApi`、`MdQualityApi`；发布 `MasterDataChangedEvent`。
 
-### 5.7 platform（基础平台能力）— 平台底座
+### 5.6 platform（基础平台能力）— 平台底座
 
 **职责**：参数配置、数据字典、文件存储、定时任务、Excel 导入导出、缓存管理、系统监测、消息模板。
 
@@ -560,16 +548,16 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **Excel 导入导出**：Apache Fesod 流式读写（10 万+行）；模板管理、字段校验、错误回显、异步导入任务 + 进度。
 - **缓存管理**：Caffeine（本地）+ Redis（分布式）两级缓存；缓存键规范与变更失效事件；穿透/击穿/雪崩防护（空值缓存、互斥重建、随机过期）。
 - **系统监测**：Actuator 指标 → Prometheus 采集 → Grafana 看板；日志（结构化）+ 链路（Micrometer Tracing）；告警规则（内存/线程/慢 SQL/任务失败）。
-- **文件存储（统一文件能力中心）**：全系统统一文件上传/下载入口 `FileApi`，业务模块只经 `FileApi` 引用文件、**不自行管理文件存储**；对象存储适配（MinIO/S3/本地盘），预签名 URL（带时效），文件权限（复用 security 数据权限）与审计（audit 留痕）；文件上传走 multipart/form-data、下载走二进制流（2.6.4 例外约定）。
+- **文件存储（统一文件能力中心）**：全系统统一文件上传/下载入口 `FileApi`，业务模块只经 `FileApi` 引用文件、**不自行管理文件存储**；对象存储适配（MinIO/S3/本地盘），预签名 URL（带时效），文件权限（复用 iam 数据权限）与审计（audit 留痕）；文件上传走 multipart/form-data、下载走二进制流（2.6.4 例外约定）。
 - **对外**：`DictApi`、`FileApi`、`ParamApi`、`SchedulerApi`、`ExcelApi`、`CacheApi`、`MonitorApi`。
 
-### 5.8 report（报表 BI）— 平台底座
+### 5.7 report（报表 BI）— 平台底座
 
 **职责**：报表引擎、数据看板、集团汇总、多维分析、定时报表、数据导出。
 
 **核心设计**：报表定义（数据集 SQL/API + 指标 + 维度）配置化；在线库报表走 PostgreSQL 只读；大查询/集团汇总走 ClickHouse 数仓；定时报表生成 + 推送（邮件/站内）；权限继承（数据权限过滤）；审计（报表访问留痕）。**对外**：`ReportApi`、`DashboardApi`、`ExportApi`。
 
-### 5.9 ai（AI 能力）— 平台底座
+### 5.8 ai（AI 能力）— 平台底座
 
 **职责**：大模型网关、RAG 知识问答、OCR、智能填单/审单/风控、Agent 编排。
 
@@ -581,85 +569,85 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **Agent 编排**：多步任务编排（自然语言 → 计划 → 工具调用），受权限与审计约束。
 - **对外**：`AiGatewayApi`、`RagApi`、`OcrApi`、`AgentApi`；模型调用入审计。
 
-### 5.10 oa（OA 协同）— 通用业务
+### 5.9 oa（OA 协同）— 通用业务
 
 **职责**：待办中心、日程、会议、公告、文档、知识库、通讯录、站内消息。
 
-**核心设计**：待办中心聚合各模块待办（经 approval/workflow 查询）；文档/知识库文件走 platform 文件存储，索引走 OpenSearch；知识库与 AI-RAG 联动；通讯录来自 org。**对外**：`TodoApi`、`DocApi`、`KbApi`、`NoticeApi`、`MessageApi`；发布 `DocUploadedEvent`。
+**核心设计**：待办中心聚合各模块待办（经 approval/workflow 查询）；文档/知识库文件走 platform 文件存储，索引走 OpenSearch；知识库与 AI-RAG 联动；通讯录来自 iam。**对外**：`TodoApi`、`DocApi`、`KbApi`、`NoticeApi`、`MessageApi`；发布 `DocUploadedEvent`。
 
-### 5.11 crm（客户关系）— 通用业务
+### 5.10 crm（客户关系）— 通用业务
 
 **职责**：线索、客户/联系人、商机、合同、电子签章、回款、跟进、客户360视图。
 
 **核心设计**：客户/商机/合同数据主体在 crm，主数据（客户档案）与 mdm 协同（客户主数据统一）；合同审批走 workflow/approval；合同签署走电子签章（第三方 CA 适配）；签约事件驱动财务应收；客户 360 视图聚合 crm + finance + service + project 数据（应用层组装）。**对外**：`CustomerApi`、`OpportunityApi`、`ContractApi`、`Crm360Api`；发布 `ContractSignedEvent`。
 
-### 5.12 inventory（库存管理）— 通用业务
+### 5.11 inventory（库存管理）— 通用业务
 
 **职责**：物料档案、出入库、库存台账、盘点、批次/序列号、预警、财务联动。
 
 **核心设计**：库存余额表（仓库×物料×批次）与库存流水表分离，变动经 `InventoryApi` 事务化处理；出入库自动生成存货/成本凭证（调 finance VoucherApi，同事务）；批次/序列号/效期管理；安全库存预警（事件 + 定时任务扫描）。**对外**：`InventoryApi`、`StockApi`、`StocktakeApi`；发布 `InventoryChangedEvent`。
 
-### 5.13 finance（财务管理）— 通用业务
+### 5.12 finance（财务管理）— 通用业务
 
 **职责**：总账、应收应付、凭证、对账、成本核算、固定资产、发票税务、费用报销、预算、财务报表。
 
 **核心设计**：凭证为财务核心，所有业务模块经 `VoucherApi` 自动生成凭证（同事务）；会计期间管理（开账/结账/反结账权限与审计）；科目主数据来自 mdm（集团统一）；应收应付与 crm/scm/fund 联动；发票税务与应收应付联动；预算控制（报销/采购执行时校验）；报表由 report 承载；全部财务关键操作入财务审计。**对外**：`AccountApi`、`VoucherApi`、`ArApApi`、`BudgetApi`、`ReimburseApi`；发布 `VoucherPostedEvent`。
 
-### 5.14 hr（人力资源）— 通用业务
+### 5.13 hr（人力资源）— 通用业务
 
-**职责**：考勤、薪酬、招聘、绩效（组织/员工在 org）。
+**职责**：考勤、薪酬、招聘、绩效（组织/员工在 iam）。
 
 **核心设计**：考勤（排班/打卡/请假/加班）与审批联动；薪酬核算（工资项规则、社保公积金）、工资条；招聘（职位/简历/面试/录用）；绩效（指标/考核/评分）。薪酬数据高敏感：字段权限 + 加密 + 审计。**对外**：`AttendanceApi`、`PayrollApi`、`RecruitApi`、`PerfApi`。
 
-### 5.15 project（项目管理）— 通用业务
+### 5.14 project（项目管理）— 通用业务
 
 **职责**：项目立项、WBS、任务、进度、里程碑、资源、工时、看板。
 
 **核心设计**：立项审批走 workflow；任务依赖与甘特图；工时填报审批（与 hr 考勤区分）；资源分配冲突检测；项目看板/报表由 report 承载。**对外**：`ProjectApi`、`TaskApi`、`TimesheetApi`。
 
-### 5.16 scm（供应链）— 通用业务
+### 5.15 scm（供应链）— 通用业务
 
 **职责**：采购、供应商、到货验收、采购对账、采购审计。
 
 **核心设计**：供应商主数据与 mdm 协同；采购申请→审批→询价→采购订单→到货（入库联动 inventory）→对账（应付联动 finance）；采购全链路留痕（采购审计）。**对外**：`PurchaseApi`、`SupplierApi`、`ReceiptApi`；发布 `GoodsReceivedEvent`。
 
-### 5.17 marketing（营销管理）— 通用业务
+### 5.16 marketing（营销管理）— 通用业务
 
 **职责**：线索池、线索分配、营销活动、市场分析。
 
 **核心设计**：线索池（公海/私有池）；线索分配规则（自动/手动、回收、防撞单）；营销活动（目标/预算/执行/效果）；市场分析与 crm 线索转化联动。**对外**：`LeadPoolApi`、`CampaignApi`。
 
-### 5.18 service（售后客服）— 通用业务
+### 5.17 service（售后客服）— 通用业务
 
 **职责**：售后工单、服务台、服务跟踪、客服知识库。
 
 **核心设计**：工单（创建/分类/派单/处理/回访/闭环）与客户/合同/产品关联；退换货联动库存；多渠道客服接入（电话/在线/邮件）；客服知识库与 AI 智能回复联动。**对外**：`TicketApi`、`ServiceDeskApi`。
 
-### 5.19 fund（资金管理）— 通用业务
+### 5.18 fund（资金管理）— 通用业务
 
 **职责**：银行账户、资金收付款、现金流、资金调拨。
 
 **核心设计**：银行账户主数据与 mdm 协同；收付款登记审批后联动 finance（应收核销/应付核销）与总账；现金流分析与资金计划；集团内资金调拨/归集（母子公司内部往来）。**对外**：`BankAccountApi`、`PaymentApi`、`TransferApi`；发布 `PaymentCompletedEvent`。
 
-### 5.20 portal（门户与消息）— 平台支撑
+### 5.19 portal（门户与消息）— 平台支撑
 
 **职责**：统一工作台、消息中心、通知推送、个人中心。
 
 **核心设计**：门户框架（菜单/快捷入口/待办聚合，聚合 approval 与各模块）；消息中心（分类/已读回执/@提醒）；通知推送渠道适配（邮件/短信/企微/钉钉）；个人中心（资料/密码/偏好）。**对外**：`PortalApi`、`NotifyApi`。
 
-### 5.21 integration（开放平台与集成）— 平台支撑
+### 5.20 integration（开放平台与集成）— 平台支撑
 
 **职责**：API 网关、OpenAPI、Webhook、第三方集成、数据迁移、**跨系统主数据分发**。
 
 **核心设计**：统一 API 网关（鉴权/限流/日志，基于 Spring Cloud Gateway 能力内嵌或自研过滤器链）；OpenAPI 文档与版本管理；Webhook（签名、重试、幂等）；第三方适配器（企微/钉钉/邮件/短信/外部系统）；数据迁移工具；**主数据对外分发**（监听 `MasterDataChangedEvent`，跨系统同步 + 监控）。**对外**：`GatewayApi`、`WebhookApi`、`MigrationApi`、`MdSyncApi`。
 
-### 5.22 mobile（移动端）— 平台支撑
+### 5.21 mobile（移动端）— 平台支撑
 
 **职责**：移动门户、移动审批、移动业务、移动消息、移动安全。
 
 **核心设计**：H5/小程序方案，复用 Web API；移动审批（意见/附件/加签转签）；扫码（库存/入库）；签到打卡；设备绑定、远程注销、数据防泄露（截屏/复制控制）。**对外**：`MobileApi`（网关侧统一入口）。
 
-### 5.23 i18n（多语言与多币种）— 平台支撑
+### 5.22 i18n（多语言与多币种）— 平台支撑
 
 **职责**：界面多语言、币种主数据、汇率、多币种财务。
 
@@ -673,8 +661,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 | 运行模式 | 启用的模块 | 场景 |
 |----------|------------|------|
-| 全量模式 | 全部 22 模块 | 集团企业一体化部署 |
-| 精简模式 | security + org + platform + audit + workflow + approval + oa + portal | 轻量协同起步（MVP） |
+| 全量模式 | 全部 21 模块 | 集团企业一体化部署 |
+| 精简模式 | iam + platform + audit + workflow + approval + oa + portal | 轻量协同起步（MVP） |
 | 业务裁剪 | 全量 −（按企业配置关闭模块） | 按需启用（模块可插拔，NFR-EXT-01） |
 
 ### 6.2 运行控制
@@ -817,28 +805,27 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | 模块 | 主要依赖（→） | 被依赖（←，主要） |
 |------|----------------|-------------------|
 | common | —（技术底座，无模块依赖） | 全部模块 |
-| security | org | 全部模块 |
-| org | platform | security、hr、oa |
-| audit | security、org、platform | 全部模块 |
-| workflow / approval | security、audit、platform、org | 全部业务模块 |
-| mdm | security、org、audit、workflow | crm、inventory、finance、scm、fund |
+| iam | platform | 全部模块 |
+| audit | iam、platform | 全部模块 |
+| workflow / approval | iam、audit、platform | 全部业务模块 |
+| mdm | iam、audit、workflow | crm、inventory、finance、scm、fund |
 | platform | — | 全部模块 |
-| report | security、audit | 全部模块 |
-| ai | security、audit、platform | oa、crm、service 等 |
-| oa | security、org、audit、platform、ai（可选渐进） | portal |
-| crm | security、mdm、workflow、audit、finance、platform | marketing、service |
-| inventory | security、mdm、audit、finance | scm、crm、service |
-| finance | security、mdm、audit、workflow、fund、platform | crm、inventory、scm、hr、fund |
-| hr | security、org、audit、finance | — |
-| project | security、org、audit、workflow | — |
-| scm | security、mdm、audit、workflow、inventory、finance | — |
-| marketing | security、crm、audit | — |
-| service | security、crm、inventory、ai | — |
-| fund | security、mdm、finance、audit、workflow | finance、crm |
-| portal | security、approval、oa、platform | 全部模块 |
-| integration | security、mdm、audit、platform | 外部系统 |
-| mobile | security、approval、portal、inventory | 移动端 |
-| i18n | security、mdm、platform | 全部模块 |
+| report | iam、audit | 全部模块 |
+| ai | iam、audit、platform | oa、crm、service 等 |
+| oa | iam、audit、platform、ai（可选渐进） | portal |
+| crm | iam、mdm、workflow、audit、finance、platform | marketing、service |
+| inventory | iam、mdm、audit、finance | scm、crm、service |
+| finance | iam、mdm、audit、workflow、fund、platform | crm、inventory、scm、hr、fund |
+| hr | iam、audit、finance | — |
+| project | iam、audit、workflow | — |
+| scm | iam、mdm、audit、workflow、inventory、finance | — |
+| marketing | iam、crm、audit | — |
+| service | iam、crm、inventory、ai | — |
+| fund | iam、mdm、finance、audit、workflow | finance、crm |
+| portal | iam、approval、oa、platform | 全部模块 |
+| integration | iam、mdm、audit、platform | 外部系统 |
+| mobile | iam、approval、portal、inventory | 移动端 |
+| i18n | iam、mdm、platform | 全部模块 |
 
 ### 11.2 核心事件清单（补充）
 
@@ -877,12 +864,13 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | Quartz / ShedLock | 定时任务 / 分布式锁 | Apache-2.0 |
 | Prometheus / Grafana | 监控告警 | Apache-2.0 |
 | Spring AI / LangChain4j | AI 网关 / Agent | Apache-2.0 |
+| GraalVM Native Image（native-maven-plugin） | 原生编译（可选部署形态，默认 JVM；反射/代理组件需 native 配置） | GPL-2.0 WITH Classpath-exception-2.0 |
 | MinIO | 对象存储 | AGPL-3.0（可换 S3 兼容替代） |
 | Flyway | 数据库迁移 | Apache-2.0 |
 | ArchUnit / Testcontainers | 架构测试 / 集成测试 | Apache-2.0 |
 | Maven / GitHub Actions | 构建 / CI | Apache-2.0 |
 
-> **许可证注意**：MinIO 为 AGPL-3.0，若企业介意可替换为 S3 兼容的开源实现（如 SeaweedFS、Ceph RGW，均 AGPL/Apache 可选）；整体选型以 Apache-2.0 友好为主，规避 GPL 传染性组件（NFR-OSS-02）。
+> **许可证注意**：MinIO 为 AGPL-3.0，若企业介意可替换为 S3 兼容的开源实现（如 SeaweedFS、Ceph RGW，均 AGPL/Apache 可选）；整体选型以 Apache-2.0 友好为主，规避 GPL 传染性组件（NFR-OSS-02）；GraalVM Native 为可选构建工具（GPL-2.0 WITH Classpath-exception，产物不传染，默认 JVM 运行无需引入）。
 
 ---
 
@@ -915,34 +903,33 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | P0 工程地基 | 1 | 工程骨架（以 RuoYi-Vue 为蓝本初始化：Modulith 命名空间 + ArchUnit 质量门 + Flyway + CI 流水线 + 统一异常/错误码） | 无（RuoYi 蓝本工程初始化） | M0–M1 |
 | P0 工程地基 | 2 | common（技术底座：ExcelKit/RedisKit/通用工具/统一返回体；迁移 ruoyi-common 工具集） | 工程骨架（模块载体，非业务依赖） | M0–M1 |
 | P1 平台底座 | 3 | platform（参数/字典/文件/定时任务/Excel/缓存/监测） | common | M1–M3 |
-| P1 平台底座 | 4 | org（组织与用户） | platform | M2–M4 |
-| P1 平台底座 | 5 | security（认证授权与权限引擎：母子公司） | org | M3–M5 |
-| P1 平台底座 | 6 | audit（操作审计，WORM 防篡改） | security、org、platform | M4–M6 |
-| P1 平台底座 | 7 | workflow + approval（工作流与统一审批中心） | security、audit、platform、org | M5–M8 |
-| P1 平台底座 | 8 | mdm（主数据管理） | security、org、audit、workflow | M6–M8 |
-| P1 平台底座 | 9 | oa（OA 协同，首个业务模块验证） | security、org、audit、platform（ai 可选渐进） | M7–M9 |
-| P1 平台底座 | 10 | portal（门户收口：菜单/待办聚合/消息） | security、approval、oa、platform | M8–M9 |
-| P2 业务闭环 | 11 | report（报表 BI） | security、audit | M9–M12 |
-| P2 业务闭环 | 12 | project（项目管理） | security、org、audit、workflow | M9–M12 |
-| P2 业务闭环 | 13 | finance（财务，与 fund 契约先行） | security、mdm、audit、workflow、fund（契约）、platform | M10–M14 |
-| P2 业务闭环 | 14 | fund（资金管理，与 finance 契约并行） | security、mdm、finance（契约）、audit、workflow | M11–M14 |
-| P2 业务闭环 | 15 | inventory（库存） | security、mdm、audit、finance | M12–M16 |
-| P2 业务闭环 | 16 | crm（客户关系） | security、mdm、workflow、audit、finance、platform | M12–M17 |
-| P2 业务闭环 | 17 | hr（人力资源） | security、org、audit、finance | M13–M18 |
-| P2 业务闭环 | 18 | scm（供应链） | security、mdm、audit、workflow、inventory、finance | M14–M20 |
-| P2 业务闭环 | 19 | marketing（营销） | security、crm、audit | M16–M21 |
-| P2 业务闭环 | 20 | ai（AI 增强：RAG/OCR/智能审单，契约先行供 service） | security、audit、platform | M15–M22 |
-| P2 业务闭环 | 21 | service（售后客服） | security、crm、inventory、ai | M17–M23 |
-| P3 平台化开放 | 22 | integration（开放平台：API 网关/OpenAPI/Webhook/主数据分发） | security、mdm、audit、platform | M24–M28 |
-| P3 平台化开放 | 23 | mobile（移动端 H5/小程序） | security、approval、portal、inventory | M24–M30 |
-| P3 平台化开放 | 24 | i18n（多语言多币种） | security、mdm、platform | M26–M32 |
-| P3 平台化开放 | 25 | 行业业务模块（按企业定制） | 通用能力层全部 | M28–M36 |
+| P1 平台底座 | 4 | iam（身份与访问管理：组织/用户/认证授权/权限引擎） | platform | M2–M5 |
+| P1 平台底座 | 5 | audit（操作审计，WORM 防篡改） | iam、platform | M4–M6 |
+| P1 平台底座 | 6 | workflow + approval（工作流与统一审批中心） | iam、audit、platform | M5–M8 |
+| P1 平台底座 | 7 | mdm（主数据管理） | iam、audit、workflow | M6–M8 |
+| P1 平台底座 | 8 | oa（OA 协同，首个业务模块验证） | iam、audit、platform（ai 可选渐进） | M7–M9 |
+| P1 平台底座 | 9 | portal（门户收口：菜单/待办聚合/消息） | iam、approval、oa、platform | M8–M9 |
+| P2 业务闭环 | 10 | report（报表 BI） | iam、audit | M9–M12 |
+| P2 业务闭环 | 11 | project（项目管理） | iam、audit、workflow | M9–M12 |
+| P2 业务闭环 | 12 | finance（财务，与 fund 契约先行） | iam、mdm、audit、workflow、fund（契约）、platform | M10–M14 |
+| P2 业务闭环 | 13 | fund（资金管理，与 finance 契约并行） | iam、mdm、finance（契约）、audit、workflow | M11–M14 |
+| P2 业务闭环 | 14 | inventory（库存） | iam、mdm、audit、finance | M12–M16 |
+| P2 业务闭环 | 15 | crm（客户关系） | iam、mdm、workflow、audit、finance、platform | M12–M17 |
+| P2 业务闭环 | 16 | hr（人力资源） | iam、audit、finance | M13–M18 |
+| P2 业务闭环 | 17 | scm（供应链） | iam、mdm、audit、workflow、inventory、finance | M14–M20 |
+| P2 业务闭环 | 18 | marketing（营销） | iam、crm、audit | M16–M21 |
+| P2 业务闭环 | 19 | ai（AI 增强：RAG/OCR/智能审单，契约先行供 service） | iam、audit、platform | M15–M22 |
+| P2 业务闭环 | 20 | service（售后客服） | iam、crm、inventory、ai | M17–M23 |
+| P3 平台化开放 | 21 | integration（开放平台：API 网关/OpenAPI/Webhook/主数据分发） | iam、mdm、audit、platform | M24–M28 |
+| P3 平台化开放 | 22 | mobile（移动端 H5/小程序） | iam、approval、portal、inventory | M24–M30 |
+| P3 平台化开放 | 23 | i18n（多语言多币种） | iam、mdm、platform | M26–M32 |
+| P3 平台化开放 | 24 | 行业业务模块（按企业定制） | 通用能力层全部 | M28–M36 |
 
 > **说明**：finance ↔ fund 存在接口级相互依赖（凭证↔收付款核销），按"契约先行"处理——先冻结 `VoucherApi` / `PaymentApi` 契约，双方并行实现，运行时经公共 API 调用，不构成包级循环。
 
-> **说明**：oa 对 ai 为**可选渐进依赖**——AI PoC 于阶段 0（M0–M2）验证，ai 完整模块在 P2（顺序 20）落地；MVP 阶段 oa 可无 AI 运行，接口层预留 ai 调用位，P2 后渐进接入（RAG / OCR / 智能审单）。
+> **说明**：oa 对 ai 为**可选渐进依赖**——AI PoC 于阶段 0（M0–M2）验证，ai 完整模块在 P2（顺序 19）落地；MVP 阶段 oa 可无 AI 运行，接口层预留 ai 调用位，P2 后渐进接入（RAG / OCR / 智能审单）。
 
-> **说明**：行业业务模块（顺序 25）为**扩展模块**，不在 11.1 固定依赖矩阵内，依赖通用能力层全部，按企业定制落地。
+> **说明**：行业业务模块（顺序 24）为**扩展模块**，不在 11.1 固定依赖矩阵内，依赖通用能力层全部，按企业定制落地。
 
 #### 13.2.1 RuoYi 蓝本改造落点（对应 2.6.1 模块映射）
 
@@ -951,11 +938,10 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | P0 | 1 工程骨架 | ruoyi-framework（基础部分）→ 工程骨架 | 以 RuoYi-Vue（前后端分离版）为蓝本搭建：Maven 多模块改造为 Modulith 命名空间、依赖基线（Spring Boot 4.x）、统一异常与错误码、CI 质量门；前端 RuoYi-Vue3 工程同步初始化 |
 | P0 | 2 common | ruoyi-common → common | 迁移 ruoyi-common 工具集：AjaxResult/BaseEntity → Result/PageResult、核心工具（StringUtils/DateUtils/JsonUtils/树形/脱敏/雪花ID）、Redis 工具、安全工具、注解基类；改造为 e-aio 薄封装门面 |
 | P1 | 3 platform | ruoyi-system（字典/参数/公告）+ ruoyi-quartz → platform | 字典/参数/公告迁移并扩展分级配置；Quartz → Spring Task + ShedLock（Quartz 可选保留） |
-| P1 | 4 org | ruoyi-system（sys_user 用户/部门/岗位）→ org | 用户主档、部门/岗位迁移；组织树升级为无限级（集团-子公司-部门） |
-| P1 | 5 security | ruoyi-framework（SecurityConfig/JWT/拦截器）+ ruoyi-system（角色/菜单/权限）→ security | 认证授权迁移；扩展母子公司多级组织权限（组织树/数据权限/SoD） |
-| P1 | 6 audit | ruoyi-system（操作日志/登录日志）→ audit | 日志 AOP 迁移；升级 WORM 防篡改 + 财务审计双体系 |
-| P1 | 7–8 | workflow / mdm | RuoYi 无直接对应，全新开发；复用 RuoYi 工具类与工程规范 |
-| P1 | 10 portal | ruoyi-ui（RuoYi-Vue3 前端工程）→ portal + 前端工程 | 保留菜单/路由/权限指令/字典/水印组件；扩展配置化渲染与移动端 H5 |
+| P1 | 4 iam | ruoyi-framework（SecurityConfig/JWT/拦截器）+ ruoyi-system（用户/部门/岗位/角色/菜单/权限）→ iam | 用户主档/部门/岗位/角色/菜单/权限统一迁移；组织树升级为无限级；扩展母子公司多级组织权限（组织树/数据权限/SoD） |
+| P1 | 5 audit | ruoyi-system（操作日志/登录日志）→ audit | 日志 AOP 迁移；升级 WORM 防篡改 + 财务审计双体系 |
+| P1 | 6–7 | workflow / mdm | RuoYi 无直接对应，全新开发；复用 RuoYi 工具类与工程规范 |
+| P1 | 9 portal | ruoyi-ui（RuoYi-Vue3 前端工程）→ portal + 前端工程 | 保留菜单/路由/权限指令/字典/水印组件；扩展配置化渲染与移动端 H5 |
 | 贯穿 | — | ruoyi-generator → devtools | 保留代码生成器为开发工具链，服务 Vibe Coding（不入运行时） |
 
 ### 13.3 批次验收标准
@@ -969,7 +955,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 
 ### 13.4 并行开发与契约先行
 
-- **链内串行、链间并行**：P1 平台底座为链式（platform→org→security→audit→workflow→mdm），相邻模块契约先行后实现可重叠；P2 中 report/project/ai 与 finance 链并行；P3 三个平台支撑模块互不依赖可并行。
+- **链内串行、链间并行**：P1 平台底座为链式（platform→iam→audit→workflow→mdm），相邻模块契约先行后实现可重叠；P2 中 report/project/ai 与 finance 链并行；P3 三个平台支撑模块互不依赖可并行。
 - **契约冻结**：模块公共 API 由架构师与模块负责人共同评审后冻结 V1，进入开发队列；契约变更走评审，避免联调返工。
 - **节奏**：单模块 2–4 周；核心维护组 5–8 人 + 领域贡献者并行；每批次结束做架构评审（ArchUnit + 契约 + 质量门）。
 
@@ -978,8 +964,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | 项目里程碑（可研 7.1） | 开发队列 | 交付 |
 |--------------------------|----------|------|
 | 阶段 0（M0–M2）技术预研 | P0 + P1 启动 | Modulith 骨架、配置化定制 PoC、AI PoC、立项评审 |
-| 阶段 1（M2–M9）MVP | P0 + P1 完成（顺序 1–10） | 平台底座 + OA + 审批 + 权限 + 工作流 + 操作审计 MVP |
-| 阶段 2（M9–M24）业务闭环 | P2 完成（顺序 11–21） | CRM/库存/财务（含财务审计）/HRM/SCM/报表，商机→合同→履约→回款闭环 |
-| 阶段 3（M24–M36）平台化 | P3 完成（顺序 22–25） | 开放平台/移动端/多语言多币种，行业解决方案与社区生态 |
+| 阶段 1（M2–M9）MVP | P0 + P1 完成（顺序 1–9） | 平台底座 + OA + 审批 + 权限 + 工作流 + 操作审计 MVP |
+| 阶段 2（M9–M24）业务闭环 | P2 完成（顺序 10–20） | CRM/库存/财务（含财务审计）/HRM/SCM/报表，商机→合同→履约→回款闭环 |
+| 阶段 3（M24–M36）平台化 | P3 完成（顺序 21–24） | 开放平台/移动端/多语言多币种，行业解决方案与社区生态 |
 
 *本概要设计说明书为 V1.0 草案，基于可行性研究报告与 SRS 编制；详细设计阶段将逐模块细化并保持与本文档的一致性与可追溯性。*

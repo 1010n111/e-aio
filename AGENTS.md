@@ -26,7 +26,7 @@ e-aio/
 │       ├── pom.xml             # 父 POM（依赖管理 BOM + 模块清单）
 │       ├── e-aio-app/          # 启动模块（Spring Boot 可执行 Jar）
 │       ├── e-aio-common/       # common 技术底座（顺序 2）
-│       └── e-aio-<module>/     # P1–P3 按开发队列新增（platform/org/security/oa/...）
+│       └── e-aio-<module>/     # P1–P3 按开发队列新增（platform/iam/audit/oa/...）
 ├── frontend/                   # 前端独立工程（Vue3 + Vite + Element Plus）
 │   ├── src/
 │   │   ├── api/                # 按模块 API 封装（统一 POST + JSON）
@@ -97,6 +97,7 @@ docker compose up -d postgres redis
 | 系统监测 | Actuator + Prometheus + Grafana |
 | OCR | PaddleOCR / Tesseract |
 | AI | Spring AI / LangChain4j / LiteLLM 网关 + RAG + pgvector |
+| 原生编译 | **GraalVM Native Image**（可选部署形态：Spring 应用编译为原生可执行文件、秒级启动；默认 JVM 运行，反射/动态代理组件需 native 配置，P1 验证） |
 | 权限 | Spring Security + 自研多级组织权限引擎 |
 | API | RESTful 风格，**统一 POST + JSON**（含查询/删除/导出） |
 
@@ -129,7 +130,7 @@ com.eaio.<module>
 **强制规则**（ArchUnit 固化）：
 - `domain` / `infrastructure` / `internal` 包**不得**被其他模块引用；
 - 跨模块仅可依赖 `api` 包；
-- **依赖单向**：业务模块 → 通用能力（workflow/security/audit/report/ai/...），**禁止反向依赖**；
+- **依赖单向**：业务模块 → 通用能力（workflow/iam/audit/report/ai/...），**禁止反向依赖**；
 - 禁止循环依赖。
 
 ### 5.3 主数据（MDM）
@@ -223,12 +224,12 @@ com.eaio.<module>
 |------|------|------|
 | `01-…-可行性研究报告.md` | 市场/技术/经济/组织/法律/进度/风险，GB/T 8567 | 已定稿 |
 | `02-…-软件需求规格说明书.md` | SRS：22 组功能需求（FR-SEC/AUD/WF/APR/MDM/OA/CRM/...）+ 38 条非功能 | 已定稿 |
-| `03-…-概要设计说明书.md` | HLD：23 模块、模块边界、API 规约、开发队列 13.2（P0–P3，25 项顺序） | 已定稿 |
+| `03-…-概要设计说明书.md` | HLD：22 模块、模块边界、API 规约、开发队列 13.2（P0–P3，24 项顺序） | 已定稿 |
 | `04-…-详细设计说明书.md` | DD 总册索引（分册体系 + 统一约定 + 验收对照） | 已定稿 |
 | `04-…-详细设计说明书-P0-工程地基.md` | **当前开发批次**：工程骨架（顺序 1）+ common 底座（顺序 2），含 3.10 RuoYi 改造 12 步 | 进行中 |
 | `04-…-详细设计说明书-P1-*.md` | P1 平台底座分册 | 待 P1 启动前编写 |
 
-**开发队列摘要（HLD 13.2）**：P0 工程骨架 + common → P1 平台底座（platform/org/security/audit/workflow/approval/mdm/...）→ P2 业务域（oa/crm/inventory/finance/hr/project/scm/...）→ P3 开放定制与 AI 增强。写代码前先确认目标模块属于哪个批次，不要跨批次提前实现。
+**开发队列摘要（HLD 13.2）**：P0 工程骨架 + common → P1 平台底座（platform/iam/audit/workflow/approval/mdm/...）→ P2 业务域（oa/crm/inventory/finance/hr/project/scm/...）→ P3 开放定制与 AI 增强。写代码前先确认目标模块属于哪个批次，不要跨批次提前实现。
 
 ---
 

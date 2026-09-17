@@ -70,6 +70,7 @@
 | **数仓 / BI**    | ClickHouse / StarRocks（开源）                                             |
 | **工作流**        | Flowable（开源，Apache-2.0）二次封装                                            |
 | **AI**         | 开源大模型网关（Spring AI / LangChain4j / LiteLLM）+ RAG + Agent + 向量库 pgvector |
+| **原生编译**       | GraalVM Native Image（可选：原生可执行文件、秒级启动；默认 JVM 运行）                             |
 | **权限**         | Spring Security（开源）+ 自研多级组织权限引擎                                        |
 | **构建 / CI**    | Maven/Gradle（开源）+ GitHub Actions                                       |
 | **API 对接**    | RESTful 风格，统一 POST + JSON（含查询/删除/导出）

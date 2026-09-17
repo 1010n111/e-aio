@@ -34,9 +34,9 @@ related:
 | 分册 | 覆盖开发队列（HLD 13.2） | 状态 | 文件 |
 |------|--------------------------|------|------|
 | 第 P0 册 · 工程地基 | 顺序 1 工程骨架 + 顺序 2 common | ✅ 已完成（V1.0） | [[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|第 P0 册 · 工程地基]] |
-| 第 P1 册 · 平台底座 | 顺序 3–10：platform、org、security、audit、workflow+approval、mdm、oa、portal | ⏳ 待 P1 启动前编写 | （预留） |
-| 第 P2 册 · 业务闭环 | 顺序 11–21：report、project、finance、fund、inventory、crm、hr、scm、marketing、ai、service | ⏳ 待 P2 启动前编写 | （预留） |
-| 第 P3 册 · 平台化开放 | 顺序 22–25：integration、mobile、i18n、行业业务模块 | ⏳ 待 P3 启动前编写 | （预留） |
+| 第 P1 册 · 平台底座 | 顺序 3–9：platform、iam、audit、workflow+approval、mdm、oa、portal | ⏳ 待 P1 启动前编写 | （预留） |
+| 第 P2 册 · 业务闭环 | 顺序 10–20：report、project、finance、fund、inventory、crm、hr、scm、marketing、ai、service | ⏳ 待 P2 启动前编写 | （预留） |
+| 第 P3 册 · 平台化开放 | 顺序 21–24：integration、mobile、i18n、行业业务模块 | ⏳ 待 P3 启动前编写 | （预留） |
 
 > **数据库设计归属**：**数据库设计说明书不单独成文档**，数据库设计内容（Schema 规划、表结构 DDL、索引、迁移脚本与种子数据）全部并入各详细设计分册，以各册"数据结构设计"章节承载；HLD 12 章待细化事项第 1 条（各模块表结构 DDL 与索引设计）在对应分册中落实。
 

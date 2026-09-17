@@ -63,7 +63,7 @@ related:
 |----------------------|-----------|--------------|
 | P0 · 顺序 1 工程骨架 | ✅ | 第 3 章 |
 | P0 · 顺序 2 common | ✅ | 第 4 章 |
-| P1–P3（顺序 3–25） | ❌ 后续补充 | 待 P1 启动前编写 |
+| P1–P3（顺序 3–24） | ❌ 后续补充 | 待 P1 启动前编写 |
 
 ### 1.3 术语与约定
 
@@ -179,6 +179,9 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 | junit5 / assertj / testcontainers | 测试 | Apache-2.0 |
 | springdoc-openapi-starter-webmvc-ui | OpenAPI 3.x 文档 | Apache-2.0 |
 | fesod-core（Apache Fesod） | Excel 读写 | Apache-2.0 |
+| org.graalvm.buildtools:native-maven-plugin（native build tools） | GraalVM 原生镜像构建（可选 Profile，默认 JVM；P1 验证） | GPL-2.0 WITH Classpath-exception-2.0 |
+
+> **原生编译（GraalVM）**：Spring Boot 4.x 官方支持 AOT + native-image 将应用编译为原生可执行文件（秒级启动、低内存）；e-aio **默认 JVM 运行**，原生构建作为可选 Profile 提供。涉及反射/动态代理的组件（MyBatis-Plus、Flowable、Redisson、AOP 等）需补充 native 配置（reflect-config / proxy-config），P1 起随模块验证；Spring Modulith 官方支持原生运行。
 
 > **版本策略**：统一由父 POM 管理，锁定已知兼容组合；升级经 PR 评审并跑全量 CI。
 
@@ -396,7 +399,7 @@ eaio:
 
 | 约定 | 说明 |
 |------|------|
-| 脚本位置 | `classpath:db/migration`（按模块分包：`db/migration/eaio_platform/`、`db/migration/eaio_org/`…） |
+| 脚本位置 | `classpath:db/migration`（按模块分包：`db/migration/eaio_platform/`、`db/migration/eaio_iam/`…） |
 | 命名规范 | `V<版本>__<描述>.sql`（如 `V1__init_schema.sql`）；重复执行用 `R__` |
 | Schema 管理 | 每个模块在 `application-{module}.yml` 声明 `spring.flyway.schemas=eaio_<module>`；启动时自动创建 schema 并执行迁移 |
 | P0 内容 | 不创建任何业务 Schema（各模块 Schema 由 P1 起在各自迁移脚本声明）；仅启用 Flyway 元表与骨架迁移基线 |
@@ -495,8 +498,8 @@ export const customerApi = {
 | 0 | 准备：clone `RuoYi-Vue` 与 `RuoYi-Vue3` 至临时目录；确认 MIT LICENSE 保留 | 两个上游工程 | 改造基线版本号记录 |
 | 1 | 建立 e-aio 父 POM 骨架：`groupId=com.eaio`、`artifactId=e-aio`、`<modules>` 仅含 `e-aio-app`、`e-aio-common`；引入 3.1.2 依赖基线 | 在 `backend/e-aio/` 下新建 `pom.xml` | `mvn -B compile` 通过 |
 | 2 | 迁移 ruoyi-common → e-aio-common：全量拷贝工具类，包名 `com.ruoyi.common` → `com.eaio.common`；`AjaxResult`→`Result<T>`、`BaseEntity`→`PageResult<T>` 配套改造；删 RuoYi 私有业务常量 | ruoyi-common | 第 4 章工具门面清单落位 |
-| 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 security 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/health` 可用 |
-| 4 | ruoyi-system 拆分登记：用户/部门/岗位 → org（P1）；角色/菜单/权限 → security（P1）；字典/参数/公告 → platform（P1）；操作日志/登录日志 → audit（P1）。**P0 不搬入**，仅冻结契约 | ruoyi-system | 契约清单（6.3 待 P1 细化事项） |
+| 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 iam 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/health` 可用 |
+| 4 | ruoyi-system 拆分登记：用户/部门/岗位/角色/菜单/权限 → iam（P1）；字典/参数/公告 → platform（P1）；操作日志/登录日志 → audit（P1）。**P0 不搬入**，仅冻结契约 | ruoyi-system | 契约清单（6.3 待 P1 细化事项） |
 | 5 | ruoyi-quartz 保留为 platform Scheduler 蓝本（P1 迁移 Spring Task + ShedLock）；**P0 移出父 POM** | ruoyi-quartz | 父 POM 无 quartz |
 | 6 | ruoyi-generator → devtools：**P0 不搬入**，登记为 Vibe Coding 开发工具链（HLD 13.2.1） | ruoyi-generator | 运行时零残留 |
 | 7 | 建立 Modulith 命名空间与 ArchUnit：按 3.1.3 分包、3.7 规则集接入，`ApplicationModules.verify()` 纳入测试 | e-aio-app/e-aio-common | 架构测试 0 违例 |
@@ -749,8 +752,8 @@ public class QueueService {
 | 10001 | 缺少必要参数 | 全部 |
 | 10002 | 数据不存在 | 全部 |
 | 10003 | 数据冲突（版本过期/重复） | 全部 |
-| 10401 | 未认证或令牌失效 | security（P1） |
-| 10403 | 无权限执行该操作 | security（P1） |
+| 10401 | 未认证或令牌失效 | iam（P1） |
+| 10403 | 无权限执行该操作 | iam（P1） |
 | 10500 | 系统内部错误 | 全部 |
 | 10501 | 重复提交（幂等拦截） | 全部 |
 
@@ -769,10 +772,10 @@ public class QueueService {
 
 ### 6.3 待 P1 细化事项
 
-1. `TenantCtx`（多组织上下文）实现与过滤器接入（security/org 详细设计）；
+1. `TenantCtx`（多组织上下文）实现与过滤器接入（iam 详细设计）；
 2. `@AuditLog` 切面与 audit 模块接入（替换 P0 日志占位）；
 3. platform 参数中心/字典/FileApi/Scheduler 表结构与 API 契约；
-4. 数据权限 SQL 改写方案（security 详细设计）；
+4. 数据权限 SQL 改写方案（iam 详细设计）；
 5. 事件总线可靠性（重试/死信/幂等）具体实现；
 6. 信创数据库适配层（方言抽象）方案。
 

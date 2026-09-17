@@ -235,7 +235,7 @@ related:
 
 #### 3.2.2 Spring Modulith 核心设计
 
-- **模块边界**：以业务域划分模块（如 `oa`、`crm`、`inventory`、`finance`、`workflow`、`audit`、`security`、`approval`、`ai`、`hr`、`project`、`scm`、`report`、`portal`、`mdm`、`marketing`、`service`、`fund`、`integration`、`mobile`、`i18n`），模块间通过明确的公共 API 交互。
+- **模块边界**：以业务域划分模块（如 `oa`、`crm`、`inventory`、`finance`、`workflow`、`audit`、`iam`、`approval`、`ai`、`hr`、`project`、`scm`、`report`、`portal`、`mdm`、`marketing`、`service`、`fund`、`integration`、`mobile`、`i18n`），模块间通过明确的公共 API 交互。
 - **通用能力与业务模块分层**：系统分为**通用能力层**（OA、CRM、库存、财务、工作流、审批、权限、审计、AI、报表等，平台统一提供、各企业一致）与**业务模块层**（按行业/企业定制的具体业务逻辑，独立成模块）。**业务模块单向调用通用能力**（复用流程、权限、审计、报表、AI 等公共服务），依赖方向为"业务模块 → 通用能力"，禁止反向依赖；通用能力保持稳定，业务模块可插拔、可定制、可独立演进。
 - **模块依赖**：依赖方向单向、清晰，禁止循环依赖；使用 ArchUnit 强制校验。
 - **事件驱动**：模块间通过 Spring 应用事件（Application Events）异步解耦（如"合同创建"→触发"应收生成"）。
@@ -258,6 +258,7 @@ related:
 | Excel 导入导出 | Apache Fesod（原 FastExcel / EasyExcel 生态，Apache-2.0，流式低内存读写） |
 | OCR | PaddleOCR / Tesseract（开源，票据/合同/证件识别） |
 | 系统监测 | Spring Boot Actuator + Prometheus + Grafana（均开源，指标/告警/监控） |
+| 原生编译 | GraalVM Native Image（可选部署形态，默认 JVM 运行；原生可执行文件、秒级启动） |
 | 搜索 | OpenSearch / Elasticsearch（开源） |
 | 数仓/BI | ClickHouse / StarRocks（开源） |
 | AI | 开源大模型网关（Spring AI / LangChain4j / LiteLLM）+ RAG 知识库 + Agent 编排 + 向量库（pgvector，开源） |
