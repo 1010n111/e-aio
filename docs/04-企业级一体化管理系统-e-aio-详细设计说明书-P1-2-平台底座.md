@@ -863,6 +863,8 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 
 **CI 阶段扩展**：P0 六阶段 → M3 前加**阶段 7 镜像构建**（`Dockerfile` + 构建产物校验）；**阶段 8（发布/回滚）不在 M1–M5 内**（需部署目标环境，本册不假装交付）。checkstyle 规则集与门禁级别在 M1 冻结并写进 [`build-and-test.md`](agents/build-and-test.md)；启用 **OWASP Dependency-Check**（P1 要求）。
 
+> **实现注记（T1 已落地）**：规则集在 `backend/e-aio/config/checkstyle/checkstyle.xml`（头部逐条写明纳入与**有意豁免**的理由），门禁级别 = 违规即失败，绑定 `validate` 阶段（`mvn -B compile|test|verify` 都先过 Lint），测试源码同样在范围内；启动类 `EaioApplication` 按文件豁免 `HideUtilityClassConstructor`（`@SpringBootApplication` 是配置类，加私有构造器会让应用起不来）。落地时修掉 6 处既有违规（2 处 `public` 构造器在包私有测试类里多余、1 处超长行、1 处 `equals` 常量未前置、1 处启动类豁免），并用 7 类故意违规验证过规则会判红。
+
 ### 6.3 前端交付范围（M1–M5 切片）
 
 **复用 P0 前端**：`src/api/request.js`（全 POST 硬校验、`ApiError`）、`src/api/codes.js`、`src/api/idempotency.js`、`src/auth/session.js`、`LoginView`/`AppLayout`/`HomeView`。
@@ -935,5 +937,5 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 | V0.1 | 2026-09-19 | 初稿：M1–M5（platform 顺序 3 + iam 顺序 4），含 22 条上游冲突裁决、common 补齐清单、24 张表 DDL 骨架、10 条架构断言、两模块验收清单 |
 | V0.2 | 2026-09-20 | 批次一致性对齐：platform 表去 `sys_` 前缀（9 张）、统一列改 `created_at/created_by/updated_at/updated_by/version/deleted`（布尔）、新增 5.4.3 索引与约束命名清单、补 `NoticeApi`/`NotifyTemplateApi`、iam 号表改为指向 iam 单模块册表 7-1（旧号逐条映射）、iam 接口签名按 iam 册对齐、iam 表清单改为指向 iam 册第 4 章、`TenantCtx`/`TenantCtxProvider` 归 iam（**不放 common**） |
 
-> **待办（进入编码后逐条消账）**：本册"5 项依赖版本 M1 核实后锁定"（2.3.3）、P0 册 6.3 事项销账、`checkstyle` 规则集冻结；`docs/agents/*` 同步项按第 6 章清单逐条回写（`architecture.md`/`database.md`/`api-conventions.md` 已同步，`CONTEXT.md` 术语补充待办）。
+> **待办（进入编码后逐条消账）**：本册"5 项依赖版本 M1 核实后锁定"（2.3.3）、P0 册 6.3 事项销账（`checkstyle` 规则集冻结已于 T1 销账，见 `build-and-test.md` 与 6.2）；`docs/agents/*` 同步项按第 6 章清单逐条回写（`architecture.md`/`database.md`/`api-conventions.md` 已同步，`CONTEXT.md` 术语补充待办）。
 

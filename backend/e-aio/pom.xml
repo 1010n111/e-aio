@@ -28,6 +28,9 @@
     <testcontainers.version>2.0.5</testcontainers.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
     <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
+    <!-- checkstyle 规则集（P1 M1 冻结，含门禁级别）：见 config/checkstyle/checkstyle.xml 头部说明。
+         工具版本随插件默认（插件版本已锁），不额外 pin checkstyle 版本，避免引入未验证的 artifact。 -->
+    <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
   </properties>
 
   <!--
@@ -101,6 +104,11 @@
           <artifactId>license-maven-plugin</artifactId>
           <version>${license-maven-plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <version>${maven-checkstyle-plugin.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -132,6 +140,39 @@
             <goals>
               <goal>integration-test</goal>
               <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!--
+        后端 Lint（P0 册 3.8 阶段 2；规则集与门禁级别在 P1 M1 冻结，P1-2 册 §CI 阶段扩展）。
+        规则集用 maven.multiModuleProjectDirectory 定位：configLocation 若写成相对路径会按“各模块
+        basedir”解析，子模块（e-aio-common/…）会找不到文件而静默不检查。
+        绑定 validate 阶段 → `mvn -B compile|test|verify` 都先过 Lint；`mvn -B checkstyle:check` 可单独跑。
+        门禁级别 = 违规即失败（severity=error + failOnViolation）；测试源码也在范围内（测例同样是代码）。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <configuration>
+          <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <consoleOutput>true</consoleOutput>
+          <failOnViolation>true</failOnViolation>
+          <violationSeverity>error</violationSeverity>
+          <!--
+            启动类豁免：HideUtilityClassConstructor 命中"只有 main 的类"，但 @SpringBootApplication
+            是配置类，Spring 要实例化/CGLIB 子类化它，加私有构造器会让应用起不来——该规则的已知误报。
+            只此文件豁免（不用全局 suppressions 文件，省掉一个相对路径解析点）。
+          -->
+          <excludes>**/EaioApplication.java</excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>checkstyle-lint</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
             </goals>
           </execution>
         </executions>

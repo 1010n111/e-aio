@@ -91,7 +91,7 @@ class ArchitectureTest {
             }
             // P0 的 com.eaio.common.api 是零依赖契约包：不带 Modulith 注解，其"命名接口"由
             // apiPackageRuleHasTeeth 的 ArchUnit 等价规则强制；其余模块的 api 包按 Modulith 登记
-            if (module.equals("common")) {
+            if ("common".equals(module)) {
                 continue;
             }
             assertThat(read(packageInfos[0]))

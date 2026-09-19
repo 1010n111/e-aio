@@ -19,10 +19,10 @@ class JsonUtilsTest {
         private String no;
         private int amount;
 
-        public Order() {
+        Order() {
         }
 
-        public Order(String no, int amount) {
+        Order(String no, int amount) {
             this.no = no;
             this.amount = amount;
         }

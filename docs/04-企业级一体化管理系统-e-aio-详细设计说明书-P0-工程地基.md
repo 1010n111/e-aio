@@ -536,7 +536,7 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 | 阶段 | 步骤 | 失败即阻断 |
 |------|------|-----------|
 | 1 编译 | `mvn -B compile` | ✅ |
-| 2 Lint | 后端 `mvn -B checkstyle:check`（规则集随 P0 冻结）；前端 `npm run lint`（ESLint） | ✅ |
+| 2 Lint | 后端 `mvn -B checkstyle:check`（规则集与门禁级别 **P1 M1 冻结**：`backend/e-aio/config/checkstyle/checkstyle.xml`，绑定 `validate` 阶段，违规即失败；P0 未启用，见 `build-and-test.md`）；前端 `npm run lint`（ESLint） | ✅ |
 | 3 单元测试 | `mvn -B test`（含 ArchUnit） | ✅ |
 | 4 架构测试 | `mvn -B verify -DskipITs`（Modulith verify） | ✅ |
 | 5 集成测试 | Testcontainers 起 PostgreSQL 17（`pgvector/pgvector:pg17`）/ Redis 7 跑 `@SpringBootTest` + Flyway 空库迁移；测试类标 `@Testcontainers(disabledWithoutDocker = true)`——本机无 Docker 时跳过，迁移路径的**权威验证在 CI** | ✅ |

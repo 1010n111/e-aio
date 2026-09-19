@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,7 +53,7 @@ public class WebConfig {
      * <p>这样"无 Redis 也能跑完整链路"，而"配了 Redis 却连不上"仍然 fail-closed（10502，不执行业务）。
      */
     @Bean
-    IdempotencyStore idempotencyStore(Environment environment, org.springframework.beans.factory.ObjectProvider<StringRedisTemplate> redisProvider) {
+    IdempotencyStore idempotencyStore(Environment environment, ObjectProvider<StringRedisTemplate> redisProvider) {
         boolean redisConfigured = environment.containsProperty("spring.data.redis.host")
                 || environment.containsProperty("spring.data.redis.port");
         StringRedisTemplate redis = redisProvider.getIfAvailable();

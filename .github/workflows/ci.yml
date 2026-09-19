@@ -40,8 +40,9 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
-      # 后端 Lint（checkstyle）按 P0 册 3.8 阶段 2 规范应在流水线里；规则集与门禁级别在 P1 冻结，
-      # P0 未启用（见 build-and-test.md 的说明）。前端 Lint 已启用，见 frontend 作业。
+      # 后端 Lint（阶段 2）已启用（P1 M1 冻结）：规则集 backend/e-aio/config/checkstyle/checkstyle.xml，
+      # 绑定 validate 阶段，因此下面每条 mvn 命令都会先跑 checkstyle，违规即失败（含测试源码）。
+      # 前端 Lint 见 frontend 作业。
       - name: 编译（阶段 1）
         working-directory: backend/e-aio
         run: mvn $MAVEN_ARGS compile

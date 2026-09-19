@@ -9,6 +9,7 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL **17**�
 | 目的 | 命令 |
 |---|---|
 | 编译 | `mvn -B compile` |
+| Lint（后端 checkstyle） | `mvn -B checkstyle:check`（规则集 `backend/e-aio/config/checkstyle/checkstyle.xml`；绑定 `validate` 阶段，因此 `compile`/`test`/`verify` 都会先跑） |
 | 单测 + 架构测试（无容器也能全绿） | `mvn -B test` |
 | 单测 + 架构测试 + 许可证扫描（跳过集成测试，日常用） | `mvn -B verify -DskipITs` |
 | **全量门禁**（含 Testcontainers 集成测试，提交前用；需要 Docker） | `mvn -B verify` |
@@ -64,13 +65,13 @@ cd e-aio-app && java -jar target/e-aio-app-*.jar --eaio.flyway.enabled=false   #
 | 门 | 内容 | 阻断 |
 |---|---|---|
 | 编译 | `mvn -B compile` | ✅ |
-| Lint | 前端 `npm run lint`（ESLint）；**后端 checkstyle 规则集与门禁级别在 P1 冻结**（P0 未启用，不写"已启用"以免假绿灯） | ✅（前端） |
+| Lint | 后端 `mvn -B checkstyle:check`（规则集与门禁级别 P1 M1 已冻结：`backend/e-aio/config/checkstyle/checkstyle.xml`，违规即失败，测试源码同样在范围内；豁免项与理由写在该文件头部）；前端 `npm run lint`（ESLint） | ✅ |
 | 单元测试 | `mvn -B test`；**可执行核心**（`Result`/`PageResult`/`ErrorCode`/异常/`JsonUtils`/`SensitiveUtils`/`DateUtils`/`IdGenerator`，名单见 P0 册 4.8）100%，其余不设阈值；"整体 ≥ 80%"自 P1 有业务代码起生效 | ✅ |
 | 架构测试 | `ArchitectureTest`（Modulith `verify()` + 命名接口 + 纯净性 + 错误码分段；含"作用面非空/违规判红"断言） | ✅ |
 | 集成测试 | Testcontainers（PostgreSQL 17 + pgvector、Redis 7）跑 `@SpringBootTest`、Flyway 空库迁移、真实 Redis 幂等重放、`/actuator/health`（Failsafe `*IT`） | ✅ |
 | 安全扫描 | License 扫描（`license-maven-plugin` 白名单，`verify` 阶段）；**OWASP Dependency-Check 属 P1**（P0 依赖面小、无认证代码） | ✅（License） |
 | 前端 | `npm test`（请求层 13 用例）+ `npm run build`（CI 独立 Job） | ✅ |
 
-**CI 与阶段映射**：`.github/workflows/ci.yml`（P0 交付物）——`backend`（阶段 1/3/4）、`integration`（阶段 5，`mvn verify`）、`license`（阶段 6）、`frontend`（阶段 1b/2b）；阶段 7 镜像构建与阶段 8 发布属 P1。运行环境固定 `ubuntu-latest` + Temurin JDK 21 + Node 24，集成测试直接用 runner 自带 Docker（不配置 service container）。PR 门槛与提交规范见 [git-workflow.md](git-workflow.md)。
+**CI 与阶段映射**：`.github/workflows/ci.yml`（P0 交付物）——`backend`（阶段 1–4，阶段 2 Lint 自 P1 M1 起启用：checkstyle 绑定 `validate`，随该作业的 `compile`/`test` 先执行）、`integration`（阶段 5，`mvn verify`）、`license`（阶段 6）、`frontend`（阶段 1b/2b）；阶段 7 镜像构建与阶段 8 发布属 P1。运行环境固定 `ubuntu-latest` + Temurin JDK 21 + Node 24，集成测试直接用 runner 自带 Docker（不配置 service container）。PR 门槛与提交规范见 [git-workflow.md](git-workflow.md)。
 
 **小步推进**：一次改动一个主题，改完立刻跑对应测试（`mvn -pl <模块> -am test` 或 `npm run build`）。

@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  e-aio 后端 checkstyle 规则集（P1 M1 冻结；P1-2 册 §CI 阶段扩展、P1-1 册阶段 2 Lint）。
+
+  冻结口径（“规则集不得放宽”，P1-1 册 §质量门）：本文件即门禁定义，改动等于改门禁，
+  需在 PR 里说明理由。门禁级别 = 违规即失败（maven-checkstyle-plugin 绑定 validate 阶段，
+  failOnViolation=true，severity=error），因此 `mvn -B compile|test|verify` 都会先过 Lint。
+
+  选则原则（“能在评审里吵清楚的才进规则集”）：
+  - 进：机器能判定、且与仓库既有约定一致的项——import 卫生、空语句/缺 break、`==` 比字符串、
+    `equals` 常量前置、大括号与空白、行宽、制表符/行尾空白、工具类构造函数。
+  - 不进（有意豁免，理由写在这里，避免后来者以为是漏配）：
+    * Javadoc 完整性（MissingJavadocType/Method）：仓库靠 java-conventions.md + 评审保证，
+      启用会在测试类与 DTO 上产生大量噪音，且无法表达“该写什么”；
+    * 命名（TypeName/MethodName/ConstantName）：Java 编译器与既有命名已一致，
+      唯一有争议的缩写词（如 `DTO`/`ID`）需要人判断，交给评审；
+    * MagicNumber / FinalParameters / HiddenField / VisibilityModifier：与既有写法冲突
+      （构造器参数回填字段、测试里的字面量），收益低于噪音；
+    * ImportOrder：仓库按“java → 第三方 → 本项目”分组且组内字母序，但组间空行策略
+      在工具里表达不出（会出现假违规），由评审保证。
+-->
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- 文件级 -->
+    <module name="NewlineAtEndOfFile"/>
+    <module name="FileTabCharacter"/>
+    <module name="RegexpSingleline">
+        <property name="format" value="\s+$"/>
+        <!-- 消息用英文：checkstyle 自带消息都是英文，中文消息在 GBK 控制台会变乱码，排障时读不出 -->
+        <property name="message" value="trailing whitespace"/>
+    </module>
+    <module name="LineLength">
+        <property name="max" value="140"/>
+        <property name="ignorePattern" value="^\s*\*.*$"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- import 卫生 -->
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        <module name="IllegalImport"/>
+
+        <!-- 常见缺陷（机器能判定） -->
+        <module name="EqualsHashCode"/>
+        <module name="EqualsAvoidNull"/>
+        <module name="MissingSwitchDefault"/>
+        <module name="FallThrough"/>
+        <module name="StringLiteralEquality"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        <module name="EmptyStatement"/>
+        <module name="OneStatementPerLine"/>
+        <module name="UpperEll"/>
+        <module name="ArrayTypeStyle"/>
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
+        <module name="EmptyBlock">
+            <property name="option" value="text"/>
+            <property name="tokens" value="LITERAL_TRY,LITERAL_CATCH,LITERAL_FINALLY,LITERAL_IF,LITERAL_ELSE,LITERAL_FOR,LITERAL_WHILE,LITERAL_DO,LITERAL_SWITCH,LITERAL_SYNCHRONIZED"/>
+        </module>
+
+        <!-- 结构 -->
+        <module name="PackageDeclaration"/>
+        <module name="OneTopLevelClass"/>
+        <module name="OuterTypeFilename"/>
+        <module name="NeedBraces"/>
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+        <module name="HideUtilityClassConstructor"/>
+
+        <!-- 空白 -->
+        <module name="NoWhitespaceBefore"/>
+        <module name="WhitespaceAfter"/>
+        <module name="GenericWhitespace"/>
+        <module name="MethodParamPad"/>
+        <module name="ParenPad"/>
+        <module name="TypecastParenPad"/>
+    </module>
+</module>
