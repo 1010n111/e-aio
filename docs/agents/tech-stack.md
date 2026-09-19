@@ -4,7 +4,7 @@
 |---|---|
 | 语言/框架 | Java 21 + Spring Boot 4.1.x + Spring Modulith 2.1.x（配套版本以父 POM `backend/e-aio/pom.xml` 为准） |
 | 工具库 | Lombok / Hutool（`cn.hutool:hutool-all` 5.8.x，Mulan PSL v2）/ Bean Validation / MapStruct（经 common 门面，见 [java-conventions.md](java-conventions.md)） |
-| JSON | Jackson **3**（Boot 4 管理）；统一走 `JsonUtils` 多态门面，**不对外暴露 `ObjectMapper` 类型** |
+| JSON | Jackson **3**（`tools.jackson.*`；Boot 4.1.1 经 `spring-boot-starter-jackson` 管到 3.1.5，**不手动指定版本、不引入 3.2.x**；Jackson 2 支持在 Boot 4 已 deprecated）；统一走 `JsonUtils` 多态门面，**不对外暴露 `ObjectMapper` 类型**；脱敏序列化器用 `tools.jackson.databind.ValueSerializer`（勿误用 Jackson 2 同名注解） |
 | Excel | Apache Fesod（Apache-2.0）→ `ExcelKit` |
 | 缓存/锁 | Redis（Redisson 底层）→ `RedisKit` |
 | 持久层 | MyBatis-Plus |
