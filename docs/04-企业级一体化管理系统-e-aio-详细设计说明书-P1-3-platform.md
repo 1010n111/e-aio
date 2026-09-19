@@ -425,14 +425,21 @@ sequenceDiagram
 | 3 | 3.1.3 图示"L1 → L2 → DB" | 带用户上下文的请求**不读 L2**（L1 → DB）；只有"无用户上下文"的请求读 L2 | 3.1.5 规定用户级 override 不进 L2，而"该用户有无 override"只有查库才知道；无脑读 L2 会在有 override 时返回组织级旧值 |
 | 4 | 取值链"DB → Spring 配置 → 代码默认"（未定属性名） | Spring 配置层约定属性名 `eaio.param.<key>`（`source=YAML`） | 链路要能用就必须有命名约定；改约定只需改 `ParamResolver` 一处 |
 | 5 | 3.1.4 写路径要"本机失效 + L2 删除 + 广播失效"三件事 | T3 做前两件；**第三件（广播）在 T4 补齐**：`ParamInvalidationPublisher`（通道 `eaio:{env}:platform:ch:invalidation`、载荷 `{env, region, key}`，用 `StringRedisTemplate.convertAndSend`——`RedisKit` 冻结方法集里没有 Pub/Sub）+ `ParamInvalidationSubscriber` + `RedisMessageListenerContainer` | 广播是"三件事"里唯一跨进程的一件；缺它时其他实例最长 60s 读旧值（= L1 TTL）。`refresh` **刻意不广播**：它的语义是"本机缓存脏了"（DBA 绕过接口改库的兜底），不是"值变了" |
-| 9 | 3.1.4 订阅侧"清本机 L1" | 订阅侧调 `ParamResolver.invalidate(key)`（L1 全部上下文变体 + L2 前缀删除），不只清 L1 | 发布方的 L2 前缀删除是尽力而为（失败只记 WARN），只清 L1 会把脏 L2 留在原地；参数键量级 ≤2000（7.2），多一次前缀删除的代价可接受 |
-| 10 | 3.1.6"写：L2 删除失败记 ERROR，广播跳过" | L2 删除失败与广播失败都记 **WARN**；广播失败不影响本机 L1/L2 失效 | Redis 缺失/抖动时 ERROR 会持续刷屏，而"靠 L1 TTL 兜底"是 3.1.5 设计内的降级路径，不是故障；WARN 已带 key 与原因，仍可检索 |
-| 11 | 3.1.6"广播订阅回调抛异常：捕获并记录" | `ParamInvalidationSubscriber.onMessage` 整体 try/catch（解析与 resolver 调用都在内），失败只记 WARN | 订阅线程挂掉会让**所有**实例的失效都失灵——这条是安全边界，不是日志风格 |
-| 12 | 3.1.4 未写订阅容器如何装配 | `ParamInvalidationBroadcastConfig` 建 `RedisMessageListenerContainer`，条件 `spring.data.redis.host`（与装配层判"有没有配 Redis"同款，见 `WebConfig`） | 没配 Redis 时不建容器：否则它会持续重连并把"无库无 Redis 的空应用"刷满 WARN，而那是明确支持的形态（镜像默认形态） |
-| 13 | P1-2 册 331 行"修改时传空表示不变更"（避免误清空） | `ParamAppService.up`：当**新类型为 SECRET、原行已加密、且 `paramValue` 为空**时保留原密文（不重新加密）；非 SECRET 行的空串仍是合法值 | 密钥类参数接口永不回显明文（5.3），管理页编辑时只能留空提交；不留空就保留会变成"一次正常编辑把密钥清成 `encrypt("")`"——不可逆的数据丢失。前端写页面按"掩码行留空"实现并只按 `Result.code` 分支 |
 | 6 | 4.5 种子里 `platform.file.local-root` 默认含运行期占位 `${user.home}` | 迁移装配需显式 `placeholder("user.home", "${user.home}")` 才能原样入库 | Flyway 默认把 `${...}` 当自己的占位符、缺值时直接失败（实测），且不能靠转义 |
 | 7 | 5.2 的 `Up` 错误码含 20004 | `Up` 不产生 20004（不支持改名）；20004 只在 `Add` 撞唯一键时出现 | `(param_key, param_level, owner_id)` 是行身份，改键等于删了重建 |
 | 8 | 7.3 权限点表 | 端点已按 7.3 逐字写 `@PreAuthorize("hasAuthority('platform:param:*')")`；iam 交付前是**契约载体**、尚不生效 | 授权由 iam 能力装配；T14 的 `PermissionCodeContractTest` 与 7.3 逐条比对 |
+| 9 | 3.1.4 订阅侧"清本机 L1" | 订阅侧调 `ParamResolver.invalidate(key)`（L1 全部上下文变体 + L2 前缀删除），不只清 L1 | 发布方的 L2 前缀删除是尽力而为（失败只记 WARN），只清 L1 会把脏 L2 留在原地；参数键量级 ≤2000（7.2），多一次前缀删除的代价可接受 |
+| 10 | 3.1.6"写：L2 删除失败记 ERROR，广播跳过" | L2 删除失败与广播失败都记 **WARN**；广播失败不影响本机 L1/L2 失效 | Redis 缺失/抖动时 ERROR 会持续刷屏，而"靠 L1 TTL 兜底"是 3.1.5 设计内的降级路径，不是故障；WARN 已带 key 与原因，仍可检索 |
+| 11 | 3.1.6"广播订阅回调抛异常：捕获并记录" | `ParamInvalidationSubscriber.onMessage` 整体 try/catch（解析与 resolver 调用都在内），失败只记 WARN | 订阅线程挂掉会让**所有**实例的失效都失灵——这条是安全边界，不是日志风格 |
+| 12 | 3.1.4 未写订阅容器如何装配 | `ParamInvalidationBroadcastConfig` 建 `RedisMessageListenerContainer`，判定用 platform 侧唯一实现 `RedisPresence.isConfigured`：`spring.data.redis.host` **或** `.port` 任一存在（与装配层 `WebConfig` 的判定逐字相同——模块边界禁止共享代码，故登记为"两份实现、一条规则"） | 没配 Redis 时不建容器（bean 方法返回 null）：否则它会持续重连并把"无库无 Redis 的空应用"刷满 WARN，而那是明确支持的形态（镜像默认形态）。不用 `@ConditionalOnProperty` 是因为判定是 OR 而该注解多属性是 AND，分叉的后果是"幂等走 Redis、跨实例失效却没订阅"这种只在多实例下暴露的静默降级 |
+| 13 | P1-2 册 331 行"修改时传空表示不变更"（避免误清空） | `ParamAppService.up`：`paramValue` 为空且**值类型未变** → 原样保留原值（SECRET 行因此保住密文）；为空且**值类型变了** → 显式拒绝 20002；非空 → 按新类型写入（SECRET 加密）。前端写页面按"掩码行留空"实现并只按 `Result.code` 分支 | "留空 = 不变更"只在类型不变时成立：跨类型时旧值无法充当新类型的值（STRING 的明文不是密文、SECRET 的密文不是明文），静默保留要么把明文标成 `encrypted = true`（读路径解密失败，对外 10500），要么把密文当明文回给调用方——两者都是"配置写错却看不出来" |
+| 14 | P0 册 3.2.5"业务失败立即释放占位" | `IdempotencyFilter` 不再按 HTTP 状态码判成败（本工程 HTTP 恒 200，等于恒判成功），改用 `ContentCachingResponseWrapper` 读响应体 `Result.code`：`code ≠ 0` 或状态 ≥ 400 即 `release`；每条路径都 `copyBodyToResponse()` | 按状态码判定会把业务失败记成 DONE，调用方带着同一个幂等键重试永远拿到 10501——失败从此不可重试。本类 javadoc 原本就写着"判定依据是响应体里的 code"，实现此前与契约不符 |
+| 15 | 两级缓存的 L2 由谁提供 `RedisKit` | 装配层 `WebConfig` 注册 `@Bean RedisKit`（配了 Redis 才注册，未配返回 null），幂等占位与 platform 的两个 L2（`ParamL2Cache`/`DictL2Cache`）共用同一个 bean | 此前只有 `RedisIdempotencyStore` 内部 `new SpringRedisKit(...)`，全仓没有 `RedisKit` bean → platform 的 `ObjectProvider<RedisKit>` 恒为 null、L2 读永不命中、写直接返回：L2 在生产上等于不存在，且相关 IT 去掉 evict 仍会绿（无牙） |
+| 16 | Redis 键 `{env}` 段怎么取（7.2 只登记了 `EAIO_ENV`） | 规则唯一实现落在 common 的 `RedisKeys.envOf(configuredEnv, activeProfiles)`（纯函数，不读 Spring 配置）：`eaio.env`/`EAIO_ENV` 优先 > 首个激活 profile > `default`；装配层与 platform 的 `CacheEnv` 都调它 | 两套键空间（`eaio:{env}:platform:…` 与 `eaio:{env}:idem:…`）各写一份规则会算出两个 env 前缀——不报错，只在多实例排查时暴露 |
+| 17 | 5.3 的 `ParamSaveCmd` 有 `remark`，而 `ParamDTO` 没有 | 管理页**不提供**备注输入框（写路径仍接受 `remark`；读契约不含该字段） | 读不到的字段做成"只能写不能读"的入口：用户看不到当前值，留空是否清库还取决于 ORM 的更新策略——与 `dict_item.remark` 同一先例（T5 注记）。要让备注可维护，先改 DTO 契约并走评审 |
+| 18 | 3.10.2"页面按钮级控制留待 iam 的 `v-hasPermi` 接入" | 前端删掉自建的 `hasPermission` 与按钮 `v-if`（后端 `@PreAuthorize` 仍是权威，越权请求返回 10403） | M1–M2 明确不做前端隐藏；自建一套 fail-open 的权限判定既与 3.10.2 冲突，又会被 `v-hasPermi` 取代——等 iam 交付后一次性接入 |
+| 19 | 5.2 的 `/param/GetAll` 入参 `{paramGroup?}` 未命名类型 | 新增 `ParamGroupCmd(paramGroup)`，`GetAll` 确实按分组过滤（为空 = 全量） | 与第 2 条同因；原实现收了入参却恒传 null，分组过滤被静默忽略 |
+| 20 | 3.9.1"事件前两字段为 `eventId`/`occurredAt`" | `ParamChangedEvent` 补 `occurredAt`（业务发生时间，非投递时间）；6.3 的 `eventRecordsHaveEventIdFirst` 收紧为**前两组件**并新增控制组 `MissingOccurredAtProbe` | 只有 eventId 时，重试场景分不清"业务何时发生"与"何时投递"；断言只查第一位等于规则没牙 |
 | 密钥来源 | 加密主密钥与预签名密钥来自**环境变量**（`EAIO_PARAM_CRYPTO_KEY`、`EAIO_FILE_PRESIGN_SECRET`），不进参数中心 | 密钥也放参数中心 | 自举问题：解密参数中心需要密钥，密钥不能存在参数中心里 |
 
 #### 3.1.6 边界条件与失败模式
@@ -539,6 +546,32 @@ flowchart LR
 | `DictAppService` | 删除有项的类型 | 20008 |
 | `DictAppService` | 停用项后 `getItems` | 结果不含该项；`getLabel` 仍返回其 label |
 | `DictAppService` | 改项 label | 发 `DictChangedEvent`，缓存键被删除（断言缓存中不存在） |
+
+**实现注记（T5 已落地，2026-09-19）**——落地时与本册口径的差异/补充，逐条登记（评审按此对照）：
+
+| # | 本册口径 | 落地实现 | 理由 |
+|---|---|---|---|
+| 1 | 3.2.2 组件写 `DictTypeController` + `DictItemController` 两个类 | 合并为单个 `infrastructure/web/DictController`（11 个端点，`/platform/dictType/*` 与 `/platform/dictItem/*` 两个前缀写在**方法**上） | 两类共用同一个 `DictAppService` 与同一套错误码，拆开只多一个文件与一处权限注解抄写；类级 `@RequestMapping` 只能挂一个前缀，故前缀下沉到方法 |
+| 2 | 5.4 的 `DictApi.del(long id)` javadoc 写"实际参数为类型 id：`del(long id, int version)`"（签名与 javadoc 自相矛盾） | 按 javadoc 的"实际参数"落地：`del(long id, int version)`、`delItem(long id, int version)` | 与 5.2 端点入参 `{id, version}` 逐字一致；删除带乐观锁版本，只给 id 就成了"无视并发改动的盲删" |
+| 3 | 5.3 未给 `DictTypeSaveCmd`/`DictItemSaveCmd`/`DictTypeQuery`/`DictItemQuery` 的字段名 | 新增四个 record：Cmd = DTO 的可写字段 + `version`（按 `typeCode` / `(typeCode, itemValue)` 定位行，不带 `id`）；Query = 5.3 的过滤字段 + 分页公共入参 | 用 `Map<String,Object>` 收参会让校验、契约与前端文档全靠约定（同 T3 的登记）；`DictItemSaveCmd` **不带 `remark`**：5.3 的 `DictItemDTO` 没有该字段，契约里不可见的字段不做成"只能写不能读"的隐性入口（`dict_item.remark` 列因此无写入入口） |
+| 4 | 5.2 的 `Get`/`Del`/`GetItems`/`Refresh` 入参只写了字段、未命名 DTO | 新增 `DictGetCmd`、`DictDelCmd`、`DictTypeCodeCmd`（`GetItems` 与 `Refresh` 同形，共用一个 record） | 同 T3 的 `ParamGetCmd`/`ParamDelCmd` 登记；同形共用一个 record 是因为"指定一个类型"的语义完全相同 |
+| 5 | 3.2.3 流程图"查 dict_type + dict_item → 写 L2/L1"未区分启用/停用 | 缓存里存**该类型下全部未删除项（含停用）**；`getItems` 在解析层过滤 `status = ENABLED` 并按 `sort_no` 返回 | 3.2.5 要求停用项对 `getItems` 不可见、对 `getLabel` 可解析；若按流程图字面只缓存启用项，停用项在列表页会退化成原始值——正是 3.2.1"历史引用不断"要防的事 |
+| 6 | 3.6.1 区域表标 DICT"空值占位 = 是（60s）" | **T5 不做空值占位与互斥重建**：不存在的 `typeCode` 直接抛 20003、不缓存；这两件事归 T6(#18) 的通用 `CacheManager`（3.6.2 的落点），届时 `DictResolver` 改接它 | 3.2.5 已定"类型不存在是配置错误，必须显式暴露"，错误路径不在热路径上；先做一份"占位 + SETNX 重建"会在 T6 落地时被替换掉。**代价**：脏 `typeCode` 每次调用都回源。另：P1-2 册 3.15 登记表的 `eaio.dict.cache-ttl-seconds` 默认值已由 300 改为 **60**（与 3.6.1 区域表对齐，登记表是单一来源），同节 379 行残留的旧写法 `eaio.cache.redis.ttl` 一并改为 `eaio.cache.redis.ttl-seconds` |
+| 7 | 7.1 段内没有 dict 专用的"内置只读"码；DDL 注释与 4.5 种子都要求"内置类型不可删除" | 内置类型及其下的字典项删除时**复用 20005**（`PARAM_BUILTIN_READONLY`），消息按字典语义给（"平台内置字典类型及其字典项不可删除"） | 段内唯一的内置只读码；7.1 明令空号不回收（20009/20019 不得新分配）、T1 已冻结段内号位。**代价**：常量名带 `PARAM_` 前缀，读代码时要靠消息与 javadoc 分辨 |
+| 8 | DDL 注释要求内置类型不可删，但未定它与 20008（仍有项）的判定顺序 | 顺序：类型不存在 20003 → **仍有项 20008** → 内置只读 20005 → version 过期 10003 | 种子 4 个内置类型都带项，"仍有项"才是可执行的原因（先删/停用项）；先报 20005 会让内置类型的删除永远只有一句"不可删"。两种情况下类型都不会被删 |
+| 9 | 5.2 给 `dictItem/Up` 列了 20007 | `Up` 不产生 20007：`item_value` 是行身份、不可改，更新时不可能撞"同类型值重复" | 与 T3 对 `param/Up` 列 20004 的处理同款：端点表的码是"该端点可能出现的全集"，实现按能力落地 |
+| 10 | 5.2 给 `dictType/Add` 的唯一业务码是 20003 | 类型编码重复也报 **20003**（消息写明"字典类型编码已存在"） | 段内没有 dict 专用的重复码；"不得新增号"是 T1 的冻结口径，冲突时以冻结点为准 |
+| 11 | 3.9.1 的载荷 `eventId, occurredAt, typeCode, itemValue(可空), action(ADD/UP/DEL), operatorId` | 逐字落地 `events/DictChangedEvent`（前两个组件固定 `eventId`/`occurredAt`） | 6.3 的 `eventRecordsHaveEventIdFirst` 要求 `eventId` 在首位；`occurredAt` 紧随其后是 3.9 的统一约定 |
+| 12 | 3.2.3 写路径要"本机失效 + L2 删除 + 广播" | 新增 `DictInvalidationPublisher`/`DictInvalidationSubscriber` + 独立 `RedisMessageListenerContainer`；与参数**共用同一条通道** `eaio:{env}:platform:ch:invalidation`，靠载荷 `region = "dict"` 区分；`refresh` **不广播** | 4.6 只有一条失效通道，新增 region 比新增通道便宜；新建独立容器是为了不改动 T4 已验证的 `ParamInvalidationBroadcastConfig`（代价：同一通道两个订阅连接）。`refresh` 与 T3 同款：它的语义是"这台机器的缓存脏了"，不是"值变了" |
+| 13 | 3.2.1"未命中返回原值 + WARN"只覆盖"值不在字典里" | 类型不存在时（`getItems` 会抛 20003）`getLabel` **同样返回原值 + WARN**，不抛 20003 | 3.2.1 的理由是"列表页渲染不能因为脏字典整页失败"；类型编码拼错与值不在字典对渲染是同一种脏数据。要暴露配置错误用 `getItems` |
+| 14 | 3.2.5 要求 `platform.dict.label.miss` 计数与"项数 > 2000 记指标" | T5 只记 WARN 日志（含 `typeCode`/`value`）；**指标计数归 monitor 票**（`MonitorApi` 尚未交付）；项数 > 2000 仍全量返回 | 不写空壳计数器：指标门面还不存在，先落地"不阻断 + 可检索"的部分，计数随 monitor 票接入 |
+| 15 | 4.3.4 的 `ext_json` 是 JSONB，而 5.3 的 `DictItemDTO.extJson` 是 String | 自定义 `infrastructure/persistence/JsonbStringTypeHandler`（`Types.OTHER` 绑定，不引 PG 专有类）+ `@TableName(autoResultMap = true)` + `@TableField(typeHandler = …)`；`is_default` 用显式 `@TableField("is_default")` | PG 不把 `varchar` 隐式转 `jsonb`，普通 String 绑定写入直接失败；`getIsDefault()` 的属性名与列名不同名，靠命名推导不稳。覆写 `setParameter` 是因为 MyBatis 在"值为 null 且 jdbcType 未指定"时会抛 `TypeException`，而 `extJson` 可为空 |
+| 16 | 3.2.2 未提 DTO 映射器；5.3 要求 `DictTypeDTO.itemCount` 由查询聚合得到 | 新增 `application/dict/DictDtoMapper`（MapStruct，`unmappedTargetPolicy = ERROR`，裁决 P1-C3）；`itemCount` 用 `selectMaps` 分组聚合**一次**查出（不做逐行 count） | 裁决 P1-C3 是该册的既定口径；列表页按行 count 是典型的 N+1 |
+| 17 | 3.10.3 说 API 文件拆 `dictType.js` / `dictItem.js` | 落地单文件 `frontend/src/api/platform/dict.js`，用命名空间导出 `dictType` / `dictItem`（方法名与 3.10.3 一致） | 本票要求单文件；两者共用同一套错误码与分页整形，拆开会让提示文案各写两份 |
+| 18 | 3.10.2 的"路由 + 按钮级控制"（1151 行：M1–M2 期间按钮不做前端隐藏） | 路由 `platform/dict` 已登记并声明 `meta.permission = 'platform:dict:list'`；**页面按钮全部渲染**，权限由后端 `@PreAuthorize` 兜底 | 遵循 1151 行的临时态：按钮隐藏等 iam 的 `v-hasPermi`（7.5 遗留），避免"隐藏即安全"的错觉 |
+| 19 | 4.5 写"字典 4 类型 + **14 项**" | 按逐项枚举落地 **15 项**（3+3+6+3）；类型 ID 21–24、项 ID 31–45，`created_by = 0`，全部 `ON CONFLICT DO NOTHING` | 枚举是权威清单（`platform_param_level(3)` + `platform_job_trigger_type(3)` + `platform_excel_task_status(6)` + `platform_alert_severity(3)`），少种一项会让某个值查不到标签。`is_default`/`ext_json` 册面未指定，取列默认值（`false`/`NULL`） |
+| 20 | 3.2.4"字典变更不单独记审计" | 落地不建字典变更日志表；`DictChangedEvent` 携带 `operatorId` 供 audit 后补 | 册面明文；audit 未交付，事件载荷已把"谁改的"带出去 |
+| 21 | 5.3 未规定 `status` 空值的语义（DDL 给的是 `DEFAULT 'ENABLED'`） | `Add` 时空值按 `ENABLED`；**`Up` 时空值保持原状态** | 两个方向的风险不对称：`Up` 统一按 `ENABLED` 会让"请求没带状态"悄悄把停用项启用回来（停用是 3.2.4 推荐的替代删除手段，被静默撤销的代价最大） |
 
 ### 3.3 统一文件能力中心（`FileApi`：存储适配 / 分片 / 预签名 / 权限 / 审计）
 
