@@ -48,7 +48,7 @@ public class ParamL2Cache {
             Environment environment) {
         this.redisKit = redisKit;
         this.redisTemplates = redisTemplates;
-        this.env = environmentOf(environment);
+        this.env = CacheEnv.of(environment);
         this.ttl = Duration.ofSeconds(environment.getProperty("eaio.cache.redis.ttl-seconds", Long.class, 1800L));
     }
 
@@ -124,16 +124,4 @@ public class ParamL2Cache {
         return Duration.ofMillis(Math.max(1L, (long) (base.toMillis() * factor)));
     }
 
-    /**
-     * Redis 键的 {@code {env}} 段：优先 {@code EAIO_ENV}（宽松绑定为 {@code eaio.env}，P1 册 7.2），
-     * 未设置时退回"首个激活 profile"（P0 的既有口径），再退回 {@code default}。
-     */
-    private static String environmentOf(Environment environment) {
-        String configured = environment.getProperty("eaio.env");
-        if (configured != null && !configured.isBlank()) {
-            return configured.trim();
-        }
-        String[] profiles = environment.getActiveProfiles();
-        return profiles.length == 0 ? "default" : profiles[0];
-    }
 }

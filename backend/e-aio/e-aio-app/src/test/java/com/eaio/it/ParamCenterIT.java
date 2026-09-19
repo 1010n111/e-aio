@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntSupplier;
 
 import javax.sql.DataSource;
 
@@ -14,6 +15,7 @@ import com.eaio.common.exception.BusinessException;
 import com.eaio.platform.api.ParamApi;
 import com.eaio.platform.api.dto.ParamSaveCmd;
 import com.eaio.platform.api.port.OrgContextPort;
+import com.eaio.platform.infrastructure.cache.ParamInvalidationPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +58,10 @@ class ParamCenterIT extends IntegrationTestBase {
 
     @Autowired
     private DataSource dataSource;
+
+    /** 广播发布方：用它模拟"另一个实例改完值后发的失效消息"。 */
+    @Autowired
+    private ParamInvalidationPublisher publisher;
 
     @LocalServerPort
     private int port;
@@ -241,6 +247,74 @@ class ParamCenterIT extends IntegrationTestBase {
                 .body(String.class);
 
         assertThat(response).as("平台内置参数删不得（20005）").contains("\"code\":20005");
+    }
+
+    @Test
+    @DisplayName("跨实例失效广播：另一实例发布失效消息后，本实例立刻读到新值（不等 L1 的 60s TTL）")
+    void crossInstanceInvalidation() throws InterruptedException {
+        String key = "platform.file.session-ttl-hours";
+        paramApiSwitchTo(9901L, 0L);
+        assertThat(paramApi.getInt(key, -1)).as("预热 L1").isEqualTo(24);
+
+        jdbc().update("update eaio_platform.param set param_value = '8888888' where param_key = ?"
+                + " and param_level = 'SYSTEM'", key);
+        assertThat(paramApi.getInt(key, -1)).as("未广播前 L1 命中：仍读缓存值").isEqualTo(24);
+
+        publisher.publish(key);
+        awaitInt(() -> paramApi.getInt(key, -1), 8888888, 5000L);
+
+        jdbc().update("update eaio_platform.param set param_value = '24' where param_key = ?"
+                + " and param_level = 'SYSTEM'", key);
+        paramApi.refresh(key);
+    }
+
+    @Test
+    @DisplayName("改值后另一上下文与另一缓存层读到新值：本机 L1 全变体清空 + L2 前缀删除一起生效")
+    void changeIsVisibleAcrossContextsAndLayers() {
+        String key = "platform.excel.error-max";
+        Long keyId = jdbc().queryForObject("select id from eaio_platform.param where param_key = ?"
+                + " and param_level = 'SYSTEM'", Long.class, key);
+        Integer version = jdbc().queryForObject("select version from eaio_platform.param where id = ?",
+                Integer.class, keyId);
+
+        paramApiSwitchTo(9211L, 0L);
+        assertThat(paramApi.getInt(key, -1)).as("组织 A 的 L1 预热").isEqualTo(1000);
+        paramApiSwitchTo(9212L, 0L);
+        assertThat(paramApi.getInt(key, -1)).as("组织 B 的 L1 预热").isEqualTo(1000);
+
+        RestClient client = RestClient.create("http://localhost:" + port);
+        String response = client.post()
+                .uri("/api/platform/param/Up")
+                .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"paramKey\":\"" + key + "\",\"paramLevel\":\"SYSTEM\",\"ownerId\":0,"
+                        + "\"paramValue\":\"2000\",\"valueType\":\"INT\",\"paramGroup\":\"excel\",\"version\":"
+                        + version + "}")
+                .retrieve()
+                .body(String.class);
+        assertThat(response).contains("\"code\":0");
+
+        assertThat(paramApi.getInt(key, -1)).as("发起方上下文：AFTER_COMMIT 已清 L1").isEqualTo(2000);
+        paramApiSwitchTo(9211L, 0L);
+        assertThat(paramApi.getInt(key, -1)).as("另一上下文：L2 前缀删除后回源读到新值").isEqualTo(2000);
+
+        jdbc().update("update eaio_platform.param set param_value = '1000', version = version + 1"
+                + " where id = ?", keyId);
+        paramApi.refresh(key);
+    }
+
+    /** 轮询等待（不引 Awaitility：只为一个用例加一个测试依赖不划算）。 */
+    private static void awaitInt(IntSupplier read, int expected, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        int actual = Integer.MIN_VALUE;
+        while (System.currentTimeMillis() < deadline) {
+            actual = read.getAsInt();
+            if (actual == expected) {
+                return;
+            }
+            Thread.sleep(50L);
+        }
+        assertThat(actual).as("广播在 %dms 内未生效", timeoutMillis).isEqualTo(expected);
     }
 
     private static void paramApiSwitchTo(long orgId, long userId) {
