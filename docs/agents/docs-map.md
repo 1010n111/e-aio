@@ -22,6 +22,8 @@
 
 `docs/agents/` 是代理指令目录（本套 AGENTS 分册），是 `docs/` 下唯一不遵循序号命名的目录。
 
+该目录里另有一类**批次交接文档** `handoff-<批次>-<模块>.md`（给接手的代理或人看：当前进度与提交线、LIVE TODO、环境踩坑与复现命令、子代理派工模板、不能碰的冻结件）。它**不是评审基准**，与 AGENTS 分册的效力不同；现有：`handoff-P1-3-platform.md`。
+
 另有两处非设计文档载体：根 [`CONTEXT.md`](../CONTEXT.md)（**术语表**：项目语言与契约名词的唯一定义处）与 [`docs/adr/`](../adr/)（**ADR**：难逆 + 需背景 + 真实取舍的决策，命名 `NNNN-<slug>.md`）。术语冲突以 CONTEXT.md 为准，已落 ADR 的决策以 ADR 为准（上游优先级仍见 [AGENTS.md](../../AGENTS.md)）。
 
 ## 开发队列（HLD 13.2）
