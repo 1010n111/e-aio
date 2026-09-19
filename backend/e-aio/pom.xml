@@ -28,6 +28,8 @@
     <testcontainers.version>2.0.5</testcontainers.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
     <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
+    <!-- 实体 ↔ DTO 映射（P1 册裁决 P1-C3：MapStruct，componentModel=spring、unmappedTargetPolicy=ERROR） -->
+    <mapstruct.version>1.6.3</mapstruct.version>
     <!-- checkstyle 规则集（P1 M1 冻结，含门禁级别）：见 config/checkstyle/checkstyle.xml 头部说明。
          工具版本随插件默认（插件版本已锁），不额外 pin checkstyle 版本，避免引入未验证的 artifact。 -->
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>

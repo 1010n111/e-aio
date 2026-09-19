@@ -33,5 +33,73 @@
       <groupId>org.springframework.modulith</groupId>
       <artifactId>spring-modulith-api</artifactId>
     </dependency>
+
+    <!--
+      REST 控制器（P1 册 2.3 分包裁决 P1-C1：Controller 放 infrastructure/web，不放 api 包）。
+      app 壳已经带了 starter-web；这里显式声明是为了让 platform 单独编译/测试时也有 web 类型。
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- 入参校验（java-conventions.md：DTO/Cmd 用 jakarta.validation 注解，Controller 上 @Valid） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- 权限点注解（P1 册 7.3）：iam 交付前 @PreAuthorize 是**契约载体**（由 PermissionCodeContractTest
+         与设计册比对），不生效的授权由 iam 的 spring-security-config 接管。 -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-core</artifactId>
+    </dependency>
+
+    <!-- 持久层：MyBatis-Plus（P1 册 2.5 与 tech-stack.md 冻结：Boot 4 starter + 3.5.17） -->
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+      <version>3.5.17</version>
+    </dependency>
+    <!--
+      分页/乐观锁拦截器所在模块：MyBatis-Plus 3.5.9 起把依赖 jsqlparser 的拦截器（分页）拆到
+      mybatis-plus-jsqlparser，starter 不再传递。缺它时 PaginationInnerInterceptor 直接编译不过
+      （比运行期"分页静默失效"友好）。
+    -->
+    <dependency>
+      <groupId>com.baomidou</groupId>
+      <artifactId>mybatis-plus-jsqlparser</artifactId>
+      <version>3.5.17</version>
+    </dependency>
+
+    <!-- 一级缓存：Caffeine（P1 册 3.1.3 的 L1，本机缓存；版本由 Boot 统一管理） -->
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
+
+    <!--
+      二级缓存（L2）与失效：正常读写走 common 的 RedisKit 门面；但"按前缀清理"（P1 册 3.1.5
+      "失效用前缀删除 + 广播，而不是单键删除"）RedisKit 的冻结方法集里没有，那一件事直接用
+      StringRedisTemplate（scan + delete）。
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
+
+    <!-- MapStruct：实体 ↔ DTO（裁决 P1-C3）。处理器用 provided，编译期生效、不进运行时依赖。 -->
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>${mapstruct.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct-processor</artifactId>
+      <version>${mapstruct.version}</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 </project>

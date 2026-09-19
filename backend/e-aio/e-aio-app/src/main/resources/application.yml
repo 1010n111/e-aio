@@ -11,6 +11,20 @@ spring:
   #   因此基础配置排除它，连接信息与 Redis 全部下沉到 local profile（application-local.yml）。
   autoconfigure:
     exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+  # 会话时区固定 UTC（P1 册 7.5 L10）：TIMESTAMPTZ 的文本解释、now() 与 timestamp/timestamptz 转换
+  # 都不随主机/容器时区漂移。有数据源时逐连接生效（Hikari 每次建连执行一次），无数据源（无库启动）
+  # 时不生效也无害，因此放基础配置而不是 local profile。
+  #
+  # 为什么用 connection-init-sql 而不用 JDBC URL 参数（2026-09-19 实测，pgjdbc 42.7.5 +
+  # pgvector/pgvector:pg17，容器时区 Asia/Shanghai，判定依据 select current_setting('timezone')）：
+  #   ?options=-c%20timezone%3DUTC → Asia/Shanghai（无效）
+  #   ?options=-c timezone=UTC     → Asia/Shanghai（无效）
+  #   ?TimeZone=UTC                → Asia/Shanghai（无效）
+  #   connection-init-sql（本写法） → UTC（有效）
+  # 前三种属**静默无效**：配了却没有任何效果，只有真去读会话时区才能发现。
+  datasource:
+    hikari:
+      connection-init-sql: "SET TIME ZONE 'UTC'"
 
 # 接口路径统一 /api/<module>/<resource>/<Action>（P0 册 3.9、docs/agents/api-conventions.md）：
 # 用 servlet context-path 承载 /api 前缀，控制器映射里就不必重复写它；
@@ -18,6 +32,15 @@ spring:
 server:
   servlet:
     context-path: /api
+
+# MyBatis-Plus 全局配置（P1 册 4.3.1：统一列 deleted 是 **BOOLEAN**，不是 MySQL 的 0/1）。
+# 默认值（logic-delete-value=1 / logic-not-delete-value=0）会生成 "deleted = 0"，
+# PostgreSQL 直接报 "operator does not exist: boolean = integer"（实测）。
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-value: "true"
+      logic-not-delete-value: "false"
 
 # 每模块独立 Flyway 实例（P0 册 3.6）：
 #   modules 的取值与模块根包同名 —— 脚本目录 classpath:db/migration/<module>，

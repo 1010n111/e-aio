@@ -29,7 +29,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
  */
 class IdempotencyFilterTest {
 
-    private static final String URI = "/platform/demo/Echo";
+    private static final String URI = "/platform/param/Add";
     private static final String KEY = "5f0c1f3e-0f0f-4f0f-8f0f-0f0f0f0f0f0f";
 
     private final Map<String, Boolean> placeholders = new ConcurrentHashMap<>();
@@ -92,10 +92,23 @@ class IdempotencyFilterTest {
     }
 
     @Test
-    @DisplayName("缺少幂等键：放行且不触碰存储（查询接口天然不受影响）")
-    void missingKeyPassesThrough() throws Exception {
+    @DisplayName("写动作缺少幂等键：返回 10001 且不执行业务（P1 册 5.6 收紧 P0 的“缺键放行”）")
+    void missingKeyOnWriteActionIsRejected() throws Exception {
         IdempotencyStore spy = mock(IdempotencyStore.class);
         filter(spy).doFilter(request, response, chain);
+
+        assertThat(probe.code).isEqualTo(10001);
+        assertThat(((Downstream) chain).calls).isZero();
+        verify(spy, never()).acquire(any());
+    }
+
+    @Test
+    @DisplayName("读动作（Get*/List*/Download*）不需要幂等键：直接放行且不触碰存储")
+    void readActionWithoutKeyPassesThrough() throws Exception {
+        IdempotencyStore spy = mock(IdempotencyStore.class);
+        MockHttpServletRequest read = new MockHttpServletRequest("POST", "/platform/param/GetPage");
+
+        filter(spy).doFilter(read, response, chain);
 
         assertThat(((Downstream) chain).calls).isEqualTo(1);
         verify(spy, never()).acquire(any());
@@ -103,14 +116,27 @@ class IdempotencyFilterTest {
     }
 
     @Test
-    @DisplayName("超长键按无键处理：不截断（截断会让不同请求撞同一个键）")
+    @DisplayName("上传动作（服务端自身幂等）不需要幂等键：直接放行")
+    void selfIdempotentUploadWithoutKeyPassesThrough() throws Exception {
+        IdempotencyStore spy = mock(IdempotencyStore.class);
+        MockHttpServletRequest upload = new MockHttpServletRequest("POST", "/platform/file/UploadChunk");
+
+        filter(spy).doFilter(upload, response, chain);
+
+        assertThat(((Downstream) chain).calls).isEqualTo(1);
+        verify(spy, never()).acquire(any());
+    }
+
+    @Test
+    @DisplayName("超长键按无键处理：不截断（截断会让不同请求撞同一个键），写动作因此被拒")
     void overlongKeyTreatedAsMissing() throws Exception {
         IdempotencyStore spy = mock(IdempotencyStore.class);
         request.addHeader(IdempotencyFilter.KEY_HEADER, "k".repeat(IdempotencyFilter.MAX_KEY_LENGTH + 1));
 
         filter(spy).doFilter(request, response, chain);
 
-        assertThat(((Downstream) chain).calls).isEqualTo(1);
+        assertThat(probe.code).isEqualTo(10001);
+        assertThat(((Downstream) chain).calls).isZero();
         verify(spy, never()).acquire(any());
     }
 

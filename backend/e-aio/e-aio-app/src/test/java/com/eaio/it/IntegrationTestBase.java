@@ -32,11 +32,7 @@ public abstract class IntegrationTestBase {
             new PostgreSQLContainer<>(DockerImageName.parse("pgvector/pgvector:pg17"))
                     .withDatabaseName("eaio")
                     .withUsername("eaio")
-                    .withPassword("eaio")
-                    // 会话时区固定 UTC：与 application-local.yml 同一口径（P1 册 7.5 L10）。
-                    // 若只在本地 profile 配，集成测试与生产路径就丢了这条保证——而 TIMESTAMPTZ 的
-                    // 读写解释正是靠它。值需 URL 编码（Testcontainers 原样拼进 JDBC URL）。
-                    .withUrlParam("options", "-c%20timezone%3DUTC");
+                    .withPassword("eaio");
 
     /** Redis 7：幂等占位（P0 册 3.2.5）。用通用容器，避免额外引入 vendor 模块。 */
     @Container

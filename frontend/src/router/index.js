@@ -24,6 +24,16 @@ const routes = [
         name: 'home',
         component: () => import('@/views/HomeView.vue'),
       },
+      {
+        path: 'platform/param',
+        name: 'platform-param',
+        component: () => import('@/views/platform/param/ParamList.vue'),
+        meta: {
+          title: '参数管理',
+          // 权限点在路由声明，按钮级隐藏等 iam 下发权限码后由 v-hasPermi 接管（P1 册 3.10.2、7.5 L1）
+          permission: 'platform:param:list',
+        },
+      },
     ],
   },
 ]

@@ -15,3 +15,9 @@ spring:
   flyway:
     # 显式开启：集成测试要真跑迁移，不依赖"默认是 true"
     enabled: true
+
+eaio:
+  param:
+    # 集成测试用的**固定**参数加密主密钥（32 字节 Base64）：只为让 SECRET 类参数可读写。
+    # 生产环境必须由环境变量 EAIO_PARAM_CRYPTO_KEY 注入，绝不入库/入仓（P1 册 3.1.5 自举问题）。
+    crypto-key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=

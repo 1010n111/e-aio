@@ -5,10 +5,10 @@ spring:
   autoconfigure:
     exclude: ""
   datasource:
-    # 时区口径：TIMESTAMPTZ 以 UTC 存储，连接串显式固定会话时区（P1 册 7.5 L10）。
-    # 注意 pgjdbc 没有 TimeZone 参数（那是 MySQL Connector/J）：写 TimeZone=UTC 会被当作未知属性
-    # 静默忽略，"看起来配了时区"而实际没配；pgjdbc 的正确写法是 options=-c timezone=UTC（URL 编码）。
-    url: jdbc:postgresql://localhost:5432/eaio?options=-c%20timezone%3DUTC
+    # 时区口径：TIMESTAMPTZ 以 UTC 存储，会话时区在基础配置里统一固定（见 application.yml 的
+    # spring.datasource.hikari.connection-init-sql）。**不要**在 URL 上挂 options/TimeZone：
+    # 实测（pgjdbc 42.7.5）两者都被静默忽略，"看起来配了时区"而实际没配（P1 册 7.5 L10）。
+    url: jdbc:postgresql://localhost:5432/eaio
     username: eaio
     password: eaio
   data:

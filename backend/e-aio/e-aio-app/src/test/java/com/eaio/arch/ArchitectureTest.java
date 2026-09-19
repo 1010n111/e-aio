@@ -14,6 +14,7 @@ import com.eaio.EaioApplication;
 import com.eaio.arch.probes.DuplicatedWithinModuleErrorCode;
 import com.eaio.arch.probes.GenericSegmentClashErrorCode;
 import com.eaio.arch.probes.OutOfSegmentErrorCode;
+import com.eaio.arch.probes.events.BadEventProbe;
 import com.eaio.arch.probes.internal.InternalProbe;
 import com.eaio.arch.probes.owner.OwnerProbe;
 import com.eaio.common.api.BusinessErrorCode;
@@ -371,6 +372,26 @@ class ArchitectureTest {
                 .hasSize(1);
     }
 
+    @Test
+    @DisplayName("事件 record：第一个组件必须是 eventId（P1 册 6.3；消费侧用它做幂等键）")
+    void eventRecordsHaveEventIdFirst() {
+        List<JavaClass> events = eventRecords(CLASSES);
+
+        assertThat(events).as("作用面非空：P1 起必须有事件 record（首个是 ParamChangedEvent）").isNotEmpty();
+        assertThat(eventIdViolations(events)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("eventId 位次规则有效：控制组（第一个组件不是 eventId）被抓到并指名字段")
+    void eventRecordsHaveEventIdFirstRuleHasTeeth() {
+        JavaClasses probes = new ClassFileImporter().importClasses(BadEventProbe.class);
+
+        assertThat(eventIdViolations(eventRecords(probes)))
+                .as("位次错了必须判违规，且消息里点名事件类与实际首字段")
+                .hasSize(1)
+                .allSatisfy(violation -> assertThat(violation).contains("BadEventProbe", "paramKey"));
+    }
+
     /** 规则形状一：{@code ownerPackage} **之外**的类不得依赖 {@code internalPackages}（内部层不可外引）。 */
     private static ArchRule noOutsiderUsesInternals(String ownerPackage, List<String> internalPackages) {
         return noClasses().that().resideOutsideOfPackage(ownerPackage)
@@ -381,6 +402,28 @@ class ArchitectureTest {
     private static ArchRule noDependencyOn(String ownerPackage, List<String> forbiddenPackages) {
         return noClasses().that().resideInAPackage(ownerPackage)
                 .should().dependOnClassesThat().resideInAnyPackage(forbiddenPackages.toArray(String[]::new));
+    }
+
+    /** 事件 record：包名含 {@code .events} 的 record（P1 册 6.3 的事件包约定，与 Modulith 无关）。 */
+    private static List<JavaClass> eventRecords(JavaClasses classes) {
+        return classes.stream()
+                .filter(JavaClass::isRecord)
+                .filter(javaClass -> javaClass.getPackageName().contains(".events"))
+                .toList();
+    }
+
+    /** eventId 位次违规：第一个组件不是 {@code eventId} 的事件；空列表 = 全部合规。 */
+    private static List<String> eventIdViolations(List<JavaClass> events) {
+        List<String> violations = new ArrayList<>();
+        for (JavaClass event : events) {
+            // 用 JDK 反射取 record 组件：ArchUnit 1.4 的 JavaClass 只有 isRecord()，不暴露组件清单
+            var components = event.reflect().getRecordComponents();
+            if (components == null || components.length == 0 || !"eventId".equals(components[0].getName())) {
+                violations.add(event.getName() + "：事件 record 的第一个组件必须是 eventId（消费侧幂等键），实际="
+                        + (components == null || components.length == 0 ? "(无组件)" : components[0].getName()));
+            }
+        }
+        return violations;
     }
 
     /** 跑规则并取回违规信息；规则没红即失败——"控制组没被抓到"本身就是缺陷。 */

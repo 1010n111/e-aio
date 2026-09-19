@@ -13,6 +13,7 @@ import org.springframework.core.env.Environment;
 import javax.sql.DataSource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 每模块独立 Flyway 实例的装配（P0 册 3.6）。
@@ -72,6 +73,11 @@ public class ModuleFlywayConfig {
                     .defaultSchema(schema)
                     .createSchemas(true)
                     .failOnMissingLocations(true)
+                    // 种子里的 ${user.home} 是**运行期**占位（文件中心读取时解析），不是迁移期占位；而 Flyway
+                    // 默认把 ${...} 当自己的占位符并在缺值时直接失败（实测报 "No value provided for
+                    // placeholder: ${user.home}"）。把它映射成自身 = 原样保留，且不关闭占位符机制——
+                    // 后续脚本真要用 Flyway 占位符时仍可正常声明。
+                    .placeholders(Map.of("user.home", "${user.home}"))
                     .load();
             modules.add(new ModuleInstances.Module(module, schema, flyway));
         }
