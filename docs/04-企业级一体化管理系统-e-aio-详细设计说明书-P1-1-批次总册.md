@@ -153,7 +153,7 @@ P0 交付的是"能跑的空壳 + 冻结契约"；P1 交付的是**所有后续�
 | M2 | +2 月 | platform 文件能力；iam 组织模型与认证；阶段 0 技术预研结论（HLD 13.5） |
 | M3 | +3 月 | platform 定时任务/Excel/缓存/监测收口；iam 授权与数据权限 |
 | M4 | +4 月 | iam 字段权限/SoD/SSO/LDAP；audit 采集与落库启动 |
-| M5 | +5 月 | iam 收口（母子公司权限 E2E）；audit WORM + 哈希链；workflow/approval 契约冻结（顺序 6 起跑） |
+| M5 | +5 月 | iam 收口（母子公司权限 E2E）；audit WORM + 哈希链；**先冻结 `workflow.api`、再冻结 `approval.api`**（approval 依赖 workflow，顺序 6 起跑） |
 
 > **口径提示**：HLD 13.5 的"阶段 0（M0–M2）技术预研"与本批次 M1–M2 重叠，重叠期内以"骨架可运行 + 契约冻结"为交付判据；audit 的 HLD 队列区间为 M4–M6，本批次只承诺 M4–M5 部分，M6 收口（归档、告警完善、财务审计接入）由后续册承接。
 
@@ -166,14 +166,15 @@ graph LR
   PLAT --> IAM
   IAM --> AUD["audit<br/>顺序 5 · M4–M6"]
   PLAT --> AUD
-  IAM --> WF["workflow + approval<br/>顺序 6 · M5–M8（不在本册）"]
+  IAM --> WF["workflow<br/>顺序 6 · M5–M8（不在本册）"]
+  WF --> APV["approval<br/>顺序 6 · M5–M8（不在本册）"]
   AUD --> WF
   PLAT --> WF
   APP["e-aio-app（唯一装配方）"] -.注入 iam→OrgContextPort 适配器.-> PLAT
   APP -.注入适配器.-> AUD
 ```
 
-- **链内串行、相邻重叠**（HLD 13.4）：platform → iam → audit 为链，前一模块 `api` 冻结后，后一模块即可开工实现。
+- **链内串行、相邻重叠**（HLD 13.4）：platform → iam → audit 为链，前一模块 `api` 冻结后，后一模块即可开工实现。顺序 6 的两项同属 M5–M8，但**方向明确**：`workflow` 依赖 iam / audit / platform，`approval` 再依赖 `workflow`（审批中心聚合工作流任务）——因此 M5 冻结 `api` 时**先冻结 `workflow.api`，再冻结 `approval.api`**。
 - **平台底座零反向依赖（本批次硬约束）**：`platform` **不依赖** `iam` / `audit`（连 `api` 包也不依赖，见 [ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)）；`iam` 不依赖 `audit` 实现。需要"当前组织上下文"时，platform 只声明**自有端口**（`OrgContextPort`），由应用壳注入 iam 适配器——装配边只存在于 `e-aio-app`，模块图因此**无环**（结构消除，不靠框架容忍）。
 - **模块载体**：每个模块一个 Maven 模块 `e-aio-<module>`，父 POM `backend/e-aio/pom.xml` 登记；`e-aio-app` 是唯一装配方与唯一 Modulith 应用（`CONTEXT.md`）。
 
@@ -228,6 +229,7 @@ graph LR
 | platform → audit | 不存在（编译期零依赖） | 文件上传/下载、参数变更的留痕由 **audit 侧**采集（`AuditAspect` + 端口适配器），platform 只发领域事件；app 负责装配 |
 | iam → audit | 仅经 `com.eaio.audit.api` 的可选依赖 | 权限变更审计（`UserRoleChangedEvent` + `PermissionAuditApi`）；M4 前 audit 缺席时降级为结构化日志 + 待补队列 |
 | audit → iam / platform | 编译期正常依赖 `api` 包 | 审计需用户名/组织名展示（iam）与参数/文件/Excel/任务（platform） |
+| approval → workflow（顺序 6，M5–M8，本册只登记方向） | 编译期正常依赖 `com.eaio.workflow.api` | 审批中心聚合工作流引擎的实例/任务（待办、催办、时效统计）并叠加分级审批规则；**两模块各自独立 Schema**（`eaio_workflow` / `eaio_approval`，见 6.1 注 4），依赖走 `api`，与 Schema 归属无关 |
 
 > **为什么不用"事件完全解耦"回避环**：事件适合副作用（缓存失效、索引同步），不适合"取数"（展示用户名、生成文件、按组织取参数），把所有同步取数改事件会把强一致读变成最终一致读，代价更大（HLD 4.4 的强/最终一致分工）。因此本批次采用"**显式传参 + 模块自有端口 + 应用壳装配**"，而不是"全事件化"，也不是"让 platform 反向依赖上层模块"。
 >
@@ -417,7 +419,9 @@ HLD 13.3 的 P1 验收为四项：**母子公司权限 E2E**、**操作审计 WO
 1. 新增模块 = 建 Maven 模块 + 父 POM 登记 + `package-info` 声明模块 + 登记本表 + `eaio.flyway.modules` 追加（**四处同时改**，缺一处 CI 失败，A1 断言兜底）。
 2. 错误码段每模块 1000 号，段内分组留空号；**空号不回收**（P0 册 3.2.3）。
 3. 本表是 P1 范围内的唯一来源；P0 册 6.1 的行仍有效，两者合并为完整登记表。
-4. **上游待修正一致性问题（登记，不修改上游）**：HLD 4.2 物理结构表把 workflow 与 approval 合并为 `eaio_wf`，与"一个模块 = 一个根包 = 一个 Schema"的模块定义（`CONTEXT.md`）及 P0 册 6.1 的 `eaio_workflow` / `eaio_approval` 冲突。本批次裁决：**以每模块独立 Schema 为准**（`eaio_workflow` / `eaio_approval`），HLD 4.2 相应行待 HLD 下次修订时同步（走 Issue 评审，不在本批次直接改 HLD）。
+4. **上游待修正一致性问题（登记，不修改上游）**：HLD 4.2 物理结构表把 workflow 与 approval 合并为一行 `eaio_wf | workflow、approval`，与"一个模块 = 一个根包 = 一个 Schema"的模块定义（`CONTEXT.md`）及本表冲突。本批次裁决：**以每模块独立 Schema 为准**（`eaio_workflow` / `eaio_approval`），HLD 4.2 相应行待 HLD 下次修订时同步（走 Issue 评审，不在本批次直接改 HLD）。
+   **为什么不能合并**：① 依赖方向是 **approval → workflow**（审批中心聚合工作流引擎的任务与实例，见 3.1 依赖表），两模块共用一个 Schema 会让"负责任何一张表迁移"的边界消失；② 一个 Schema = 一个 Flyway 实例 = 一条版本序列（ADR-0002），两模块的 DDL 混排会把版本号变成运行时约定；③ 裁剪场景（NFR-EXT-01）里"只留引擎不留审批中心"将无法拆分。
+   **注意**：合并 Schema 与"approval 依赖 workflow"并不构成矛盾（依赖走 `api`，与数据库归属无关，同 audit → iam、iam → platform 的先例）；被否决的是"共用 Schema"，不是"存在依赖"。
 
 ### 6.2 Schema 与迁移登记
 
