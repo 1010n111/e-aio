@@ -134,7 +134,7 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 ├── .github/workflows/ci.yml          # CI 流水线（后端/前端独立 Job，见 3.8）
 ├── .github/PULL_REQUEST_TEMPLATE.md  # PR 模板（3.8 配套）
 ├── docker-compose.yml                # 本地 PostgreSQL/Redis 编排（见 docs/agents/build-and-test.md）
-├── .env.example                      # 本地环境变量样例（不含真实密钥）
+├── .env.example                      # 本地环境变量样例（不含真实密钥）；本地 `cp .env.example .env`，`.env` 已在 .gitignore 中
 ├── Dockerfile                        # 应用镜像（多阶段构建）——**属 P1**（随 3.8 阶段 7 镜像构建一并引入）
 ├── LICENSE                           # e-aio 自身 Apache-2.0
 ├── NOTICE                            # 第三方组件许可与 RuoYi MIT 版权声明、蓝本 tag/commit
@@ -328,9 +328,13 @@ public enum ErrorCode {
     FORBIDDEN(10403, "无权限执行该操作"),
     SYSTEM_ERROR(10500, "系统内部错误"),
     IDEMPOTENT_REPLAY(10501, "重复提交"),
+    IDEMPOTENCY_UNAVAILABLE(10502, "幂等校验不可用（Redis 不可用，请稍后重试）"),
+    // 通用段预留 10503–19999：空号不回收
     // 模块前缀：业务模块段从 20000 起，每模块预留 1000 号（20000 platform / 21000 iam / 22000 audit …）
     // 10000–19999 之外的空号不回收；模块内自增，跨模块不可能撞号，附录 6.1 仅作索引
     // 模块侧登记（非 common）：各业务模块根包 package-info.java 声明 @ApplicationModule
+    // ErrorCode 是**枚举**（0 成功 + 10000–10502 通用段）；业务模块各自定义枚举实现 BusinessErrorCode 接口，
+    // 由 ArchUnit 断言其数值落在附录 6.1 登记的 1000 号段内（第五轮裁决）
     ;
     private final int code;
     private final String message;
@@ -375,6 +379,8 @@ public class IdempotentReplayException extends RuntimeException {
 | 范围 | 写接口（Add/Up/Del 及业务动作）强制、查询接口不启用；幂等键缺失时按普通请求放行并记录 WARN |
 
 > **重复提交的两种状态（必须明确）**：`10501` 对 **`PROCESSING`（首个请求仍在执行中）** 与 **`DONE`（已完成）** 两种情况**同样返回**——即"执行中重放"也算重复提交，客户端提示"请求已提交，请稍后刷新"，不等待、不回放。因此**长任务接口（导出/批量导入）不得以幂等键承担结果交付**：结果交付走任务 ID + 轮询（异步导入 API 随 FR-PLT-05 在 P1 冻结，见 4.3）。
+>
+> **幂等校验不可用时的行为（第五轮裁决，fail-closed）**：Redis 不可用（连接失败/超时）导致**无法判定是否重复**时，`IdempotencyFilter` **拒绝执行**并返回 `10502`（幂等校验不可用）+ ERROR 日志（含 traceId），**不静默放行**——放行会在 Redis 抖动期间真实产生重复写入，与"接口幂等"承诺相违。代价：Redis 故障时**写接口短时不可用，读接口不受影响**。P0 不提供 `fail-open` 开关（`eaio.idempotency.fail-open` 属 P1 评估项，默认恒为 closed）：单一行为比两套行为更可验证，本地无 Redis 时也不会误以为"幂等已生效"。
 >
 > **与 HLD 7.2 的对齐**：HLD 7.2 原表述"返回原结果"与本册/`docs/agents/api-conventions.md`（幂等键约定，优先级最高）的"返回 `10501` 重复提交"冲突。已统一为**返回 10501、不重复执行业务、不回放历史结果**，HLD 7.2 同步修订；接口幂等由"键 + 唯一约束"兜底，不做结果缓存回放。
 
@@ -495,7 +501,7 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 
 ### 3.8 CI 流水线（GitHub Actions）
 
-`.github/workflows/ci.yml` 流水线：
+`.github/workflows/ci.yml` 流水线（运行环境见本节末）：
 
 | 阶段 | 步骤 | 失败即阻断 |
 |------|------|-----------|
@@ -510,7 +516,7 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 
 配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`LICENSE`（Apache-2.0）、`NOTICE`（含 RuoYi MIT 声明与蓝本 tag/commit）、PR 模板（NFR-OSS-03/05）；本地依赖编排 `docker-compose.yml` + `.env.example`。
 
-**运行环境（第四轮裁决）**：`runs-on: ubuntu-latest` + Temurin **JDK 21**（`actions/setup-java`）+ Node **24**（`actions/setup-node`）；Runner 自带 Docker，Testcontainers 直接可用，**不再额外配置 service container**（避免与 Testcontainers 争夺容器生命周期）。后端 Job 顺序：`mvn -B verify`（含阶段 3–5）→ 前端独立 Job `npm ci && npm run lint && npm run build`。`docker-compose.yml` 形态：`postgres`（`pgvector/pgvector:pg17`，init 脚本 `CREATE EXTENSION IF NOT EXISTS vector`）+ `redis`（`redis:7-alpine`），named volume 持久化，`.env.example` 只放样例值（无真实密钥）。
+**运行环境（第四轮裁决）**：`runs-on: ubuntu-latest` + Temurin **JDK 21**（`actions/setup-java`）+ Node **24**（`actions/setup-node`）；Runner 自带 Docker，Testcontainers 直接可用，**不再额外配置 service container**（避免与 Testcontainers 争夺容器生命周期）。后端 Job 顺序：`mvn -B verify`（含阶段 3–5）→ 前端独立 Job `npm ci && npm run lint && npm run build`。`docker-compose.yml` 形态：`postgres`（`pgvector/pgvector:pg17`，init 脚本 `CREATE EXTENSION IF NOT EXISTS vector`）+ `redis`（`redis:7-alpine`），named volume 持久化，`.env.example` 只放样例值（无真实密钥）——本地 `cp .env.example .env`（`.env` 入 `.gitignore`），compose 用 `environment: ${VAR:-default}` 读取。
 
 ### 3.9 前端工程骨架（RuoYi-Vue3 蓝本）
 
@@ -830,7 +836,8 @@ public class RateLimiter {
 | 10403 | 无权限执行该操作 | iam（P1） |
 | 10500 | 系统内部错误 | 全部 |
 | 10501 | 重复提交（幂等拦截） | 全部 |
-| 10502–19999 | 通用段预留（空号不回收） | — |
+| 10502 | 幂等校验不可用（Redis 不可用，fail-closed） | 全部 |
+| 10503–19999 | 通用段预留（空号不回收） | — |
 
 **模块登记表（单一事实来源）**：P1 起新增模块**必须**按下表登记（模块 → 根包 → Schema → 错误码段 → 状态），不得在别处另建映射；错误码在预留段内自增，空号不回收，跨模块不可能撞号（3.2.3）：
 
@@ -862,7 +869,9 @@ public class RateLimiter {
 3. platform 参数中心/字典/FileApi/Scheduler 表结构与 API 契约；
 4. 数据权限 SQL 改写方案（iam 详细设计）；
 5. 事件总线可靠性（重试/死信/幂等）具体实现；
-6. 信创数据库适配层（方言抽象）方案。
+6. 信创数据库适配层（方言抽象）方案；
+7. **ArchUnit「模块登记完备」断言**（每个模块根包 `package-info` 带 `@ApplicationModule`）与「业务错误码落在登记段内」断言——P0 只有 `e-aio-app` / `e-aio-common`（common 非 Modulith 模块），**无可断言对象**，故留到 P1 首个业务模块接入时补测（3.7 已声明该要求）；
+8. `eaio.idempotency.fail-open` 开关评估（P0 恒 fail-closed，见 3.2.5）。
 
 ---
 
@@ -873,4 +882,4 @@ public class RateLimiter {
 | 版本 | 日期 | 主要修订 |
 |------|------|----------|
 | V1.1 | 2026-09-19 | P0 阶段审核修订初版 |
-| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）。 |
+| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）；⑨ 第五轮：幂等校验不可用 fail-closed（新增 `10502`，3.2.5/6.1）、`ErrorCode` 定为枚举 + `BusinessErrorCode` 接口 + 分段断言（3.2.3）、P0 架构测试只上可执行规则集（3.7/6.3）、`.env.example` + `.gitignore` 忽略 `.env`（3.8）。 |
