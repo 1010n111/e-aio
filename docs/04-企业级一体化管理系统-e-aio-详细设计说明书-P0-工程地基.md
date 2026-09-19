@@ -252,7 +252,7 @@ package com.eaio.common.api;
 
 #### 3.1.4 目录结构（前端 RuoYi-Vue3 初始化）
 
-前端基于 RuoYi-Vue3 蓝本初始化（Vue3 + Vite + Element Plus），保留其成熟能力（路由/权限指令/字典/水印），改造点为统一请求封装（见 3.9）。
+前端工程**自行初始化**（Vue3 + Vite + Element Plus），布局/路由/权限指令/字典/水印等做法**参考** RuoYi-Vue3 蓝本（不拷贝其源码，3.10），改造点为统一请求封装（见 3.9）。
 
 ```
 frontend/
@@ -586,10 +586,10 @@ export const customerApi = {
 
 | 分类 | RuoYi 内容 | e-aio 处置 |
 |------|-----------|-----------|
-| 保留（迁移） | ruoyi-common 工具集、ruoyi-framework 基础（Security/JWT/拦截器/全局异常）、RuoYi-Vue3 前端工程、字典/参数/日志基础实现 | 按 3.10.2 步骤迁移，包名/命名空间重写 |
-| 改造 | AjaxResult/BaseEntity → `Result<T>`/`PageResult<T>`；操作日志 → 双审计（P1）；Quartz → Spring Task+ShedLock（P1）；API → 统一 POST + JSON | 见 3.2、3.5、3.6、3.9 |
-| 删除/隔离 | ruoyi-generator（→ devtools 不入运行时）、ruoyi-admin 直连入口、RuoYi 前端直连后端配置、非 P0 的 system 业务表 | 移出 P0 父 POM / 前端移除，P1 按模块重建 |
-| 合规 | RuoYi 版权声明与 LICENSE（MIT） | 保留原版权与 LICENSE 文件（HLD 2.6.3） |
+| 参考改写（不拷贝文件） | ruoyi-common 工具集（`StringUtils`/`DateUtils`/`TreeUtils`/`Convert`/雪花 ID 等）、ruoyi-framework 的写法（拦截器/全局异常的组织方式）、RuoYi-Vue3 的工程配置与页面模式 | 在**只读参考副本**上读懂意图后**自行实现**为 e-aio 门面，包名/命名空间/依赖全按 e-aio 基线（3.10.2 步骤 2/3/11） |
+| 重写 | `AjaxResult`/`BaseEntity` → `Result<T>`/`PageResult<T>`；`SecurityConfig`/JWT → P0 不做（3.1.2）；Quartz → Spring Task + ShedLock（P1）；API → 统一 POST + JSON | 见 3.2、3.3、3.5、3.6、3.9，11/12 步 |
+| 不抄 | ruoyi-generator（→ devtools 不入运行时）、ruoyi-admin 直连入口、RuoYi 前端直连后端配置、RuoYi 的 `sql/` 初始化方式、非 P0 的 system 业务表 | 父 POM 与运行时零残留，P1 按模块重建 |
+| 合规 | RuoYi-Vue / RuoYi-Vue3（均 MIT） | **不拷贝源码、不保留上游 LICENSE 文件**：`NOTICE` 只记上游 MIT 许可证名 + 蓝本 tag/commit 作溯源（第七轮裁决；HLD 2.6.3） |
 
 #### 3.10.2 实施步骤（P0）
 
@@ -607,25 +607,25 @@ export const customerApi = {
 | 9 | Flyway 迁移骨架接入：替换 RuoYi 的 SQL 脚本直连初始化方式（`sql/` 目录），改由 3.6 每模块独立 Flyway 实例管理（P0 仅 `platform → eaio_platform` 基线） | 数据库初始化 | 空库迁移通过 |
 | 10 | CI 流水线：按 3.8 搭建 GitHub Actions（后端 Maven Job + 前端 npm Job 独立） | `.github/workflows/ci.yml` | PR 质量门全绿 |
 | 11 | 前端 `frontend/`：**不拷贝 RuoYi-Vue3 源码**，按 3.9.2 自行搭建工程（改名 `e-aio-web`）——Vite Proxy、统一 request 封装（POST + JSON + 幂等键）、布局与页面模式**参考** RuoYi-Vue3；ESLint + `npm run build` 纳入 CI | `frontend/` | `npm run build` 与 `npm run lint` 通过 |
-| 12 | 清理与合规收尾：父 POM 无 RuoYi 残留模块与未使用依赖；删除 RuoYi 私有常量/表注释残留；**`LICENSE`（Apache-2.0）与 `NOTICE`（RuoYi-Vue/Vue3 MIT 版权声明 + 蓝本 tag/commit）就位**；README、CONTRIBUTING、CODE_OF_CONDUCT、PR 模板、`docker-compose.yml`/`.env.example` 就位；**`Dockerfile` 与镜像推送属 P1**（3.8 阶段 7–8） | 全工程 | 对照 5.2 P0 验收清单 |
+| 12 | 清理与合规收尾：父 POM 无 RuoYi 残留模块与未使用依赖；**全仓库无 RuoYi 源码/包名/私有常量残留**（`grep -ri ruoyi` 为空，仅 `NOTICE`/文档中的蓝本溯源除外）；**`LICENSE`（Apache-2.0，本项目自身）与 `NOTICE`（RuoYi-Vue/Vue3 均 MIT + 蓝本 tag/commit 溯源）就位**；README、CONTRIBUTING、CODE_OF_CONDUCT、PR 模板、`docker-compose.yml`/`.env.example` 就位；**`Dockerfile` 与镜像推送属 P1**（3.8 阶段 7–8） | 全工程 | 对照 5.2 P0 验收清单 |
 
 #### 3.10.3 包名重写与文件级操作示例
 
 ```bash
-# 包名重写（示例）：ruoyi-common → backend/e-aio/e-aio-common
-# 1) 物理目录迁移（在 backend/e-aio/ 下操作）
-git mv ruoyi-common/src/main/java/com/ruoyi/common e-aio-common/src/main/java/com/eaio/common
-# 2) 全量包名替换（IDE 或 sed 等价操作）
-#    com.ruoyi.common → com.eaio.common
-# 3) 关键类型改造
+# 文件级操作（示例）：只读参考副本 → 自行实现进 e-aio-common
+# 0) 参考副本放在工作区之外（如 /tmp/ruoyi-vue @ <tag/commit>），e-aio 仓库内不得出现 RuoYi 目录
+# 1) 需要哪个工具类，就在参考副本上读懂意图（含边界与实现取舍），然后在目标位置新建文件：
+#    backend/e-aio/e-aio-common/src/main/java/com/eaio/common/util/XxxUtils.java
+#    —— 自行实现，包名 com.eaio.*、依赖只用 3.1.2 基线与 JDK，移除上游版权头与 ruoyi 特有常量
+# 2) 关键类型改造
 #    AjaxResult       → Result<T>（com.eaio.common.api）
 #    BaseEntity       → 按用途拆为 PageResult<T> / BaseDO
 #    Constants/UserConstants → RedisKeys 等按 e-aio 键规范重写
-# 4) 构建验证（在 backend/e-aio/ 下执行）
+# 3) 构建验证（在 backend/e-aio/ 下执行）
 mvn -pl e-aio-common -am clean compile
 ```
 
-> **注意事项**：① 改造必须保留 RuoYi 版权声明与 LICENSE（MIT）；② 步骤 2/3 的迁移产物必须通过 3.7 ArchUnit（common 不依赖任何模块）；③ 步骤 4 的拆分登记冻结为 P1 契约，避免 P0 提前引入业务表；④ 前端清理后 RuoYi 页面（system 等）在 P1 portal 重建，P0 仅保留布局/路由/权限指令框架。
+> **注意事项**：① P0 **不拷贝 RuoYi 源码**（第七轮裁决）：参考副本置于工作区之外，需用哪段就自行实现，**不复制上游版权头、不保留上游 LICENSE 文件**；`NOTICE` 记上游 MIT 许可证名 + 蓝本 tag/commit 作溯源（HLD 2.6.3）；② 自研实现必须通过 3.7 ArchUnit（common 不依赖任何模块）；③ 步骤 4 的拆分登记冻结为 P1 契约，避免 P0 提前引入业务表；④ 前端清理后 RuoYi 页面（system 等）在 P1 portal 重建，P0 仅保留布局/路由/权限指令框架。
 
 ---
 
@@ -899,4 +899,4 @@ public class RateLimiter {
 | 版本 | 日期 | 主要修订 |
 |------|------|----------|
 | V1.1 | 2026-09-19 | P0 阶段审核修订初版 |
-| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）；⑨ 第五轮：幂等校验不可用 fail-closed（新增 `10502`，3.2.5/6.1）、`ErrorCode` 定为枚举 + `BusinessErrorCode` 接口 + 分段断言（3.2.3）、P0 架构测试只上可执行规则集（3.7/6.3）、`.env.example` + `.gitignore` 忽略 `.env`（3.8）；⑩ 第六轮：数据库权限模型（本地/CI 超管验证建 Schema、生产 DBA 预建，3.6/database.md）、全中文 + i18n 留 P1（3.6）、覆盖率只卡可执行核心（4.8/5.1）、启动文档含无 Docker 降级路径（5.2/build-and-test.md）；⑪ 第七轮：platform 迁移脚本落模块自有位置（P0 新建 `e-aio-platform` 承载，3.6/3.1.1）、platform 错误码段 P0 只登记不建枚举、common 纯净性三条黑名单规则（3.7）、P0 验收后打 tag `v0.1.0-p0`（5.3）；⑫ Jackson 3 事实核实：坐标 `tools.jackson.core:jackson-databind`（Boot 4.1.1 管 3.1.5，不手动升 3.2.2）、脱敏序列化器实现 `tools.jackson.databind.ValueSerializer` 并写死 `@JsonSerialize` FQN + 断言脱敏输出的最小单测（防跨代同名注解静默不脱敏，4.2/4.8）、logstash-logback-encoder 版本交 BOM 管、Hutool/Fesod 均不拉 Jackson。 |
+| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）；⑨ 第五轮：幂等校验不可用 fail-closed（新增 `10502`，3.2.5/6.1）、`ErrorCode` 定为枚举 + `BusinessErrorCode` 接口 + 分段断言（3.2.3）、P0 架构测试只上可执行规则集（3.7/6.3）、`.env.example` + `.gitignore` 忽略 `.env`（3.8）；⑩ 第六轮：数据库权限模型（本地/CI 超管验证建 Schema、生产 DBA 预建，3.6/database.md）、全中文 + i18n 留 P1（3.6）、覆盖率只卡可执行核心（4.8/5.1）、启动文档含无 Docker 降级路径（5.2/build-and-test.md）；⑪ 第七轮：platform 迁移脚本落模块自有位置（P0 新建 `e-aio-platform` 承载，3.6/3.1.1）、platform 错误码段 P0 只登记不建枚举、common 纯净性三条黑名单规则（3.7）、P0 验收后打 tag `v0.1.0-p0`（5.3）；⑫ Jackson 3 事实核实：坐标 `tools.jackson.core:jackson-databind`（Boot 4.1.1 管 3.1.5，不手动升 3.2.2）、脱敏序列化器实现 `tools.jackson.databind.ValueSerializer` 并写死 `@JsonSerialize` FQN + 断言脱敏输出的最小单测（防跨代同名注解静默不脱敏，4.2/4.8）、logstash-logback-encoder 版本交 BOM 管、Hutool/Fesod 均不拉 Jackson；⑬ 第八轮：蓝本处置统一为 **clean-room 参考重写**——3.10.1 分类表由"保留（迁移）/改造"改为"参考改写（不拷贝文件）/重写/不抄"、3.10.3 删去 `git mv ruoyi-common` 示例改为文件级自研实现流程、步骤 12 增"全仓库无 RuoYi 残留"判据、合规口径由"保留上游版权与 LICENSE"改为"`NOTICE` 记上游 MIT + tag/commit 溯源"（HLD 2.6 与 agents/git-workflow.md 同步）。 |
