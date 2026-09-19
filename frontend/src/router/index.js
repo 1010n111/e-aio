@@ -34,6 +34,16 @@ const routes = [
           permission: 'platform:param:list',
         },
       },
+      {
+        path: 'platform/dict',
+        name: 'platform-dict',
+        component: () => import('@/views/platform/dict/DictList.vue'),
+        meta: {
+          title: '字典管理',
+          // 同 3.10.2：M1–M2 页面按钮不做前端隐藏，权限由后端 @PreAuthorize 兜底（7.5 遗留）
+          permission: 'platform:dict:list',
+        },
+      },
     ],
   },
 ]
