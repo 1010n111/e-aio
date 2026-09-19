@@ -23,7 +23,7 @@ Issue 与规格记在 GitHub Issues（`1010n111/e-aio`，用 `gh` CLI）。见 [
 ## 每个任务
 
 1. **定批次**：目标模块属 P0/P1/P2/P3 哪一批（队列见 [docs-map.md](docs/agents/docs-map.md)）；不跨批次提前实现。
-2. **读批次分册**：当前 P0 → `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基.md`。
+2. **读批次分册**：当前 P1 → `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座.md`（P0 已交付：`…-P0-工程地基.md`）。
 3. **按索引查区域**，再写代码 + 测试。
 4. **提交前过门禁**（[build-and-test.md](docs/agents/build-and-test.md)），并对照索引文件逐条自查冻结项。
 5. **收尾提交**：本轮对话只要有代码或文档改动就提交一次（一个主题一次提交，格式见 [git-workflow.md](docs/agents/git-workflow.md)）；确无改动不产生空提交。
