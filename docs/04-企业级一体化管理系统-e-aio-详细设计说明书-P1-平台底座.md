@@ -36,7 +36,7 @@ related:
 1. **本册只管 P1 的顺序 3–9**（HLD 13.2 / DD 总册 1）。本次交付 **M1–M5 段**：顺序 3 `platform`（M1–M3）+ 顺序 4 `iam`（M2–M5）；顺序 5–9（audit / workflow+approval / mdm / oa / portal）**待 M6–M9 段编写**，但本册已为它们冻结必须遵守的边界（2.4 契约先行、4.5 权限事件、附录 7.4 交接清单）。
 2. **P0 契约 V1 一行不改**：`Result<T>` / `PageResult<T>` / `ErrorCode` / 幂等 / 每模块独立 Schema 与 Flyway 实例全部沿用（P0 册 3.2、3.6）。P1 只在**预留段内新增**平台与 iam 的业务错误码（20000–20999 / 21000–21999）。
 3. **M1–M5 的唯一新增 Maven 模块是 `e-aio-iam`**；`e-aio-platform` 在 P0 已建（迁移骨架承载），P1 起填充业务代码。P0 册 6.2 冻结清单里**尚未落地**的 common 门面（`RedisKit`/`ExcelKit`/`TreeUtils`/校验注解…）与 P1 依赖在 **M1 头两周**补齐（2.3.3、2.7）——**这是 P1 的第一件实事，不是可选项**：platform/iam 的任何一行业务代码都依赖它们。
-4. **两处 HLD 未决项在本册裁决**：定时任务 = **Spring Task + ShedLock**（不用 Quartz/XXL-JOB）；租户上下文 = **common 承载 `TenantCtx`、iam 填充、全模块只读**（platform 因此**不依赖 iam**，依赖矩阵不破）。
+4. **两处 HLD 未决项在本册裁决**：定时任务 = **Spring Task + ShedLock**（不用 Quartz/XXL-JOB）；租户上下文 = **iam 承载 `TenantCtx`/`TenantCtxProvider`（`com.eaio.iam.api`）、platform 与 audit 只经 `api` 可选注入读取（本册裁决，详见 4.5）**（platform 因此**不依赖 iam**，依赖矩阵不破）。
 5. **`TenantCtx` 是本册最重要的技术缝**：它把「母子公司数据隔离」变成一条可测的规则——所有数据访问经 `TenantCtx` 取当前组织，并由 MyBatis-Plus 拦截器强制追加 `org_id` 过滤条件，漏带上下文即**拒绝查询并报错**（fail-closed），而不是"查全表"。
 6. **验收锚点**：M1–M3 末 `platform` 可配置可调度（参数热更新、字典、文件、任务、Excel 异步任务）；M5 末 `iam` 打通「登录 → 令牌 → 鉴权 → 数据权限过滤 → 权限变更留痕」全链路，并交付 HLD 13.3 中属于本册的 **母子公司权限 E2E** 部分（组织树 / 数据权限 / SoD）。
 
@@ -76,7 +76,7 @@ related:
 |---|---|
 | 组织节点（org node） | `eaio_iam.org_node` 一行；节点类型（`node_type`）取 `GROUP`(集团)/`COMPANY`(公司)/`DEPT`(部门)/`TEAM`(团队)，`parent_id` 无限级 |
 | 闭包表（closure table） | `eaio_iam.org_node_path`：`(ancestor_id, descendant_id, depth)`，子树查询不再递归 |
-| 当前组织上下文 | `TenantCtx`：请求级「当前组织 + 数据范围 + 用户」，由 iam 认证过滤器写入 `com.eaio.common.context.TenantContextHolder`（ThreadLocal），全模块只读 |
+| 当前组织上下文 | `TenantCtx`：请求级「当前组织 + 数据范围 + 用户」，由 iam 认证过滤器写入 iam 内部 `TenantContextHolder`（ThreadLocal，实现不外泄），全模块只读 |
 | 数据范围（data scope） | 枚举 `SELF / DEPT / ORG / ORG_AND_SUB / ALL / CUSTOM`（本人 / 本部门 / 本组织 / 本组织及下级 / 全集团 / 自定义） |
 | 权限点（permission） | 权限的最小判定单位，字符串 `module:resource:action`（全小写，如 `iam:user:reset`）；角色与权限点多对多 |
 | 参数分级 | 参数（param）按 `scope_type` 取 `SYSTEM` / `ORG`，后者按 `org_id` 覆盖前者（三级配置：代码默认 → env 文件 → 参数中心） |
@@ -121,7 +121,7 @@ common ──▶ platform ──▶ iam ──▶ audit ──▶ workflow+appro
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| `e-aio-common` | P0 已建 | 契约 V1 冻结（只允许向后兼容新增）；P1 补齐 2.7 清单：`context`(TenantCtx)、`crypto`(AES-GCM)、`persistence`(BaseDO)、`redis`(RedisKit)、`excel`(ExcelKit)、`validation`、`TreeUtils/BeanUtils/CollectionUtils` |
+| `e-aio-common` | P0 已建 | 契约 V1 冻结（只允许向后兼容新增）；P1 补齐 2.7 清单：`crypto`(AES-GCM)、`persistence`(BaseDO) 等门面（`TenantCtx` 归 iam，见 4.5）、`redis`(RedisKit)、`excel`(ExcelKit)、`validation`、`TreeUtils/BeanUtils/CollectionUtils` |
 | `e-aio-platform` | P0 已建（仅迁移骨架） | P1 填充 `api/application/domain/infrastructure/events` |
 | `e-aio-iam` | **P1 新增** | 父 POM 登记 + `package-info`（`@ApplicationModule`）+ `api` 包（`@NamedInterface("api")`）+ 迁移目录 `classpath:db/migration/iam` + Schema `eaio_iam` |
 | `e-aio-app` | P0 已建 | 装配与启动；**新增** Security 过滤器链装配、`TenantContextFilter` 注册、MyBatis-Plus 拦截器装配（4.6.3） |
@@ -160,7 +160,7 @@ common ──▶ platform ──▶ iam ──▶ audit ──▶ workflow+appro
 |---|---|---|
 | 组织与用户取数 | `OrgApi`（树/子树/路径/按 id 批量取）、`UserApi`（按 id 批量取简档） | audit、workflow、oa 及全部业务模块 |
 | 权限判定 | `PermissionApi.hasPermission(code)`、`DataScopeApi.appendScope(条件构建器)`、`SoDCheckApi.check(...)` | workflow/approval（审批人解析、跨公司审批） |
-| 当前组织上下文 | `TenantCtxProvider.current()`、`common` 的 `TenantContextHolder` | 全部模块 |
+| 当前组织上下文 | `com.eaio.iam.api.TenantCtxProvider.current()`（platform/audit 为可选注入；`TenantContextHolder` 是 iam 内部实现） | 全部模块 |
 | 权限/组织变更事件 | `UserRoleChangedEvent`、`OrgNodeChangedEvent`（AFTER_COMMIT） | audit（权限审计留痕） |
 | 文件与参数 | `FileApi`、`ParamApi`、`DictApi` | 全部模块 |
 | **审计挂钩（为 audit 预留，本册不实现）** | 平台侧统一发布 `AuditEvent`（操作人/时间/IP/模块/对象/动作/前后值/结果），audit 在 M4–M6 订阅落库 | audit |
@@ -173,7 +173,7 @@ HLD/SRS 与 AGENTS 系列（评审基准，优先级最高）存在不一致时�
 
 | # | 冲突点 | 上游说法 | **本册裁决** | 依据 |
 |---|---|---|---|---|
-| C-1 | 审计字段命名 | HLD §4.3：`created_at/created_by/updated_at/updated_by/version` | 采用 **`create_by/create_time/update_by/update_time`**（P0 `BaseDO` 基类，AGENTS [`database.md`](agents/database.md)）；**另加 `version`** 列承载 HLD §6.2 的乐观锁要求 | AGENTS 系列 > 03 概要设计 |
+| C-1 | 审计字段命名 | HLD §4.3：`created_at/created_by/updated_at/updated_by/version` | 采用 **`created_by/created_at/updated_by/updated_at`**（P0 `BaseDO` 基类，AGENTS [`database.md`](agents/database.md)）；**另加 `version`** 列承载 HLD §6.2 的乐观锁要求 | AGENTS 系列 > 03 概要设计 |
 | C-2 | 组织生命周期状态 | HLD §5.2：筹备→运营→注销→**归档**；§4.1.1：筹备/运营/注销 | 四态 `PREPARING/RUNNING/CANCELLED/ARCHIVED`；**注销 ≠ 归档**：注销触发权限清理（踢下线 + 停用组织内角色授权），归档只读冻结 | 取并集，语义更严格者优先（5.3.1） |
 | C-3 | 数据范围枚举 | HLD §5.2 六值；§4.1.1 五值（缺"本组织及下级"） | 六值 `SELF/DEPT/ORG/ORG_AND_SUB/ALL/CUSTOM` | 取并集；`ORG_AND_SUB` 是母子公司隔离的必需值 |
 | C-4 | 平台 API 清单 | HLD §5.6 有 `MonitorApi`；§3.2 未列 | **保留 `MonitorApi`**（只读，暴露 Actuator 聚合视图） | §5.6 是模块职责权威 |
@@ -215,7 +215,7 @@ P0 册 6.2 把下列门面写进「契约 V1 冻结清单」，但**代码里不
 
 | 资产 | 包 | 用途 | 备注 |
 |---|---|---|---|
-| `TenantCtx` + `TenantContextHolder` | `com.eaio.common.context`（新增） | 当前组织上下文（4.6.1） | 纯值对象 + ThreadLocal，无业务逻辑、无 DB |
+| `TenantCtx` + `TenantCtxProvider` | `com.eaio.iam.api`（iam 侧） | 当前组织上下文（4.5） | 值对象 + 只读接口；`TenantContextHolder`（ThreadLocal）留在 iam `infrastructure`，**不放 common** |
 | `BaseDO` | `com.eaio.common.persistence`（新增） | 审计字段基类（`id/createBy/createTime/updateBy/updateTime/version/deleted`） | **纯 POJO，不带任何持久层注解**——`commonIsPure` 禁止 common 依赖 `org.apache.ibatis..`/`jakarta.persistence..`；字段由 MyBatis-Plus 全局配置识别（5.2.0） |
 | `CryptUtils` | `com.eaio.common.crypto`（新增） | AES-GCM 加解密（NFR-SEC-02） | 只用 JDK `javax.crypto`；密钥来自环境变量，**不入库、不入 Git** |
 | `RedisKit` / `RedisKeys` / `DistributedLock` / `RateLimiter` | `com.eaio.common.redis`（新增） | Redis 门面（Redisson 底座） | 键规范沿用 P0 幂等键前缀 `eaio:{env}:`；`RedisKeys` 是键的唯一构造点 |
@@ -449,7 +449,7 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 
 `ParamChangedEvent(key, oldValue, newValue, operatorId, orgId)`、`DictChangedEvent(typeCode)`、`FileUploadedEvent(fileId, bizType, bizId, size, operatorId)`、`FileDeletedEvent(fileId, operatorId)`、`JobFailedEvent(jobCode, failCount, lastError, traceId)`、`ExcelExportedEvent(taskId, rows, operatorId)`。
 
-**投递口径**（HLD 2.2.2 + 2.6）：发布用 `@ApplicationModuleListener`/`@TransactionalEventListener(AFTER_COMMIT)`；消费方（audit）失败**不得**影响已提交事务；失败进重试队列（Spring Retry，3 次指数退避）→ 仍失败进 `sys_event_dead_letter`？——**本册决策**：死信表随 **audit** 模块落地（audit 是第一个真实消费者，M4–M6），platform 侧只保证"发布不抛异常 + 记录发布失败日志"。全局事件可靠性方案在 P1 册 2.6 已列为审计/工作流阶段复核，**本册不为 platform 预建死信表**。
+**投递口径**（HLD 2.2.2 + 2.6）：发布用 `@ApplicationModuleListener`/`@TransactionalEventListener(AFTER_COMMIT)`；消费方（audit）失败**不得**影响已提交事务；失败进重试队列（Spring Retry，3 次指数退避）→ 仍失败进 `event_dead_letter`？——**本册决策**：死信表随 **audit** 模块落地（audit 是第一个真实消费者，M4–M6），platform 侧只保证"发布不抛异常 + 记录发布失败日志"。全局事件可靠性方案在 P1 册 2.6 已列为审计/工作流阶段复核，**本册不为 platform 预建死信表**。
 
 ### 3.14 关键流程（平台侧，写代码按此实现）
 
@@ -568,14 +568,14 @@ com.eaio.iam
 
 ### 4.5 TenantCtx 与数据权限落地（FR-SEC-15 + HLD §12 待细化第 3 项）
 
-**`TenantCtx`（`com.eaio.common.context`）**：
+**`TenantCtx`（`com.eaio.iam.api`）**：
 ```java
 record TenantCtx(long userId, String username, long orgId, String orgPath,
                  List<Long> orgIds,      // 已解析的数据权限组织范围（见下）
                  boolean crossOrg,       // 集团级（ALL）
                  Set<String> perms) {}
 ```
-**填充与清理**：`AuthContextFilter`（iam 提供、app 装配，位于 `TraceIdFilter`/`IdempotencyFilter` 之后）解析 JWT → `TenantContextHolder.set(ctx)` → `finally clear()`。**禁止跨线程泄漏**：线程池任务必须显式传递——`TenantContextHolder.runWith(ctx, supplier)`，异步任务/定时任务在提交时**快照**上下文。这是硬规则（ThreadLocal + 线程池 = 串号事故）。
+**填充与清理**：`AuthContextFilter`（iam 提供、app 装配，位于 `TraceIdFilter`/`IdempotencyFilter` 之后）解析 JWT → 经 `TenantCtxProvider.runAs(...)` 写入 iam 内部上下文 → `TenantContextHolder.set(ctx)` → `finally clear()`。**禁止跨线程泄漏**：线程池任务必须显式传递——`TenantContextHolder.runWith(ctx, supplier)`，异步任务/定时任务在提交时**快照**上下文。这是硬规则（ThreadLocal + 线程池 = 串号事故）。
 **系统上下文**：定时任务/初始化用 `TenantContextHolder.system()`（`userId=0`、`crossOrg=true`、`perms=∅`）；系统上下文下**数据权限不生效**（否则任务查不到数据），因此它**只允许出现在任务/初始化代码**，不得出现在 HTTP 处理路径（评审必查项 + 代码注释强制标注）。
 
 **数据权限 SQL 改写（唯一落点 + 关键决策 C-22）**：MyBatis-Plus `DataPermissionInterceptor` + `MultiDataPermissionHandler`（由 iam 实现、app 装配）；Mapper 方法用 `@DataScope(resource, orgColumn, userColumn)` **显式标注**（opt-in）。
@@ -734,7 +734,7 @@ public interface SoDCheckApi {
 
 1. **Schema**：`eaio_platform` / `eaio_iam`，脚本内对象**显式 Schema 限定**；**不建跨 Schema 外键**；跨模块引用一律走 `api`（裁决 C-22：数据权限也不跨 Schema）。
 2. **主键**：`id BIGINT`（雪花 `IdGenerator`，`IdType.INPUT`），**不用自增**（信创/分布式留口）。`workerId` 由 `eaio.id.worker-id` 配置，多实例必须区分。
-3. **统一列（每张业务表都有，共 7 个）**：`id BIGINT`（雪花）、`created_at TIMESTAMPTZ`、`created_by BIGINT`、`updated_at TIMESTAMPTZ`、`updated_by BIGINT`、`version INT NOT NULL DEFAULT 0`（乐观锁 `@Version`）、`deleted BOOLEAN NOT NULL DEFAULT false`（逻辑删除 `@TableLogic`）。**列名口径以 P1 批次总册 3.5 为准**（`created_at`/`created_by`/`updated_at`/`updated_by`），旧写法 `create_time`/`create_by` 已废止。
+3. **统一列（每张业务表都有，共 7 个）**：`id BIGINT`（雪花）、`created_at TIMESTAMPTZ`、`created_by BIGINT`、`updated_at TIMESTAMPTZ`、`updated_by BIGINT`、`version INT NOT NULL DEFAULT 0`（乐观锁 `@Version`）、`deleted BOOLEAN NOT NULL DEFAULT false`（逻辑删除 `@TableLogic`）。**列名口径以 P1 批次总册 3.5 为准**（`created_at`/`created_by`/`updated_at`/`updated_by`），旧写法 `created_at`/`created_by` 已废止。
 4. **派生表例外**：`org_node_path` 是闭包表（派生数据），**不带审计列与 `deleted`**，重建而非删除。
 5. **时间**：一律 `TIMESTAMPTZ`，**UTC 存储**，展示层按时区转换（`DateUtils`）。
 6. **布尔**：业务布尔标志用 `SMALLINT`（0/1），**不用 PG `boolean`**（信创留口）；**唯一例外**是统一列的 `deleted`，用 `BOOLEAN NOT NULL DEFAULT false`（与批次总册 3.5 一致）。
@@ -770,11 +770,11 @@ public interface SoDCheckApi {
 | platform | `excel_task` | 本册新增 | M2 | 导入/导出异步任务（**一表覆盖两向**） |
 | platform | `notify_template` / `notice` | 本册新增 | M3 | 消息模板与站内消息 |
 | iam | `sys_user` | **C-14 改名**（HLD 的 `user` 是保留字） | M2 | 用户主档 |
-| iam | `user_password_history` / `user_mfa` / `identity_provider` | 本册新增 | M2/M3 | 密码历史、TOTP、外部身份绑定 |
+| iam | **iam 全部 31 张表**（含 `user_password_history`、`mfa_recovery_code`、`position`、`user_org`、`employee`、`auth_session`、`auth_refresh_token`、`login_attempt`、`sso_config`、`ldap_config`、`abac_policy`、`access_grant`、`sod_rule_permission`、`sod_exemption`、`field_permission`、`permission_snapshot`、`org_lifecycle_log`、`event_outbox`、`event_consume_record` …） | 逐表见 `04-…-P1-iam.md` 第 4 章（**唯一权威**，本册不复制） | M2–M5 | 组织/人员/认证/授权/数据权限/SoD/外部身份/会话/发件箱 |
 | iam | `org_node` / `org_node_path` | HLD §4.1.1 点名 | M2 | 无限级组织树 + 闭包表 |
-| iam | `org_position` / `user_org` | `org_position` 点名；`user_org` 本册新增 | M3 | 岗位、多组织兼任（FR-HR-08） |
-| iam | `role` / `permission` / `role_permission` / `user_role` | 前四者点名（`role_permission` 本册新增） | M2/M3 | RBAC |
-| iam | `data_scope_rule` / `sod_rule` / `field_permission` | 前两者点名；`field_permission` 本册新增 | M3/M4 | 数据范围、SoD、字段权限 |
+| iam | `position` / `org_position` / `user_org` | 见 iam 册（岗位定义与挂载、多组织兼任 FR-HR-08） | M3 | 岗位与任职 |
+| iam | `role` / `permission` / `role_permission` / `user_role` | 见 iam 册 | M2/M3 | RBAC |
+| iam | `data_scope_rule` / `data_scope_resource` / `sod_rule` / `sod_rule_permission` / `field_permission` / `abac_policy` | 见 iam 册 | M3/M4 | 数据范围、SoD、字段权限、ABAC |
 
 > **登录日志/审计日志不在 iam**：归 audit（顺序 5，M4–M6），iam 只发 `LoginEvent`/`AuditEvent`（C-7）。
 > **菜单/前端路由**：RuoYi 的 `sys_menu` 在 HLD 中并入 `permission`（`perm_type = MENU`），**不另建菜单表**——菜单树 = `permission` 树，前端按权限点渲染（避免权限与菜单两套数据源）。
@@ -788,32 +788,21 @@ public interface SoDCheckApi {
 | `param` | `config_key VARCHAR(128) NOT NULL`、`config_value TEXT`、`value_type VARCHAR(16) NOT NULL DEFAULT 'STRING'`、`scope_type VARCHAR(16) NOT NULL DEFAULT 'SYSTEM'`、`org_id BIGINT NOT NULL DEFAULT 0`（0 = 系统级）、`config_group VARCHAR(64)`、`description VARCHAR(255)`、`is_builtin SMALLINT NOT NULL DEFAULT 0`、`is_encrypted SMALLINT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(config_key, org_id) WHERE deleted = false`；idx `(config_group)` |
 | `dict_type` | `type_code VARCHAR(64) NOT NULL`、`type_name VARCHAR(64) NOT NULL`、`status`、`remark VARCHAR(255)` | UNIQUE `(type_code) WHERE deleted = false` |
 | `dict_item` | `type_code VARCHAR(64) NOT NULL`、`dict_value VARCHAR(64) NOT NULL`、`dict_label VARCHAR(128) NOT NULL`、`sort_no INT NOT NULL DEFAULT 0`、`ext_json TEXT`、`status`、`remark` | UNIQUE `(type_code, dict_value) WHERE deleted = false` |
-| `file` | `original_name VARCHAR(255)`、`stored_name VARCHAR(128) NOT NULL`、`storage_type VARCHAR(16) NOT NULL DEFAULT 'LOCAL'`、`relative_path VARCHAR(512) NOT NULL`、`content_type VARCHAR(128)`、`file_size BIGINT NOT NULL`、`sha256 CHAR(64) NOT NULL`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`uploader_id BIGINT NOT NULL`、`uploader_org_id BIGINT NOT NULL`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'` | idx `(sha256)`、`(biz_type, biz_id)`、`(uploader_id)`、`(status, create_time)` |
+| `file` | `original_name VARCHAR(255)`、`stored_name VARCHAR(128) NOT NULL`、`storage_type VARCHAR(16) NOT NULL DEFAULT 'LOCAL'`、`relative_path VARCHAR(512) NOT NULL`、`content_type VARCHAR(128)`、`file_size BIGINT NOT NULL`、`sha256 CHAR(64) NOT NULL`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`uploader_id BIGINT NOT NULL`、`uploader_org_id BIGINT NOT NULL`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'` | idx `(sha256)`、`(biz_type, biz_id)`、`(uploader_id)`、`(status, created_at)` |
 | `job` | `job_code VARCHAR(64) NOT NULL`、`job_name VARCHAR(128) NOT NULL`、`handler_code VARCHAR(128) NOT NULL`、`cron VARCHAR(64) NOT NULL`、`timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai'`、`params_json TEXT`、`timeout_seconds INT NOT NULL DEFAULT 300`、`misfire_policy VARCHAR(16) NOT NULL DEFAULT 'SKIP'`、`retry_times SMALLINT NOT NULL DEFAULT 0`、`retry_interval_seconds INT NOT NULL DEFAULT 60`、`status SMALLINT NOT NULL DEFAULT 1`、`last_fire_time TIMESTAMPTZ`、`next_fire_time TIMESTAMPTZ`、`remark VARCHAR(255)` | UNIQUE `(job_code) WHERE deleted = false`；idx `(status, next_fire_time)` |
 | `job_run` | `job_code VARCHAR(64) NOT NULL`、`fire_time TIMESTAMPTZ NOT NULL`、`start_time TIMESTAMPTZ`、`end_time TIMESTAMPTZ`、`duration_ms BIGINT`、`status VARCHAR(16) NOT NULL`、`result_summary VARCHAR(512)`、`error_stack TEXT`、`trace_id VARCHAR(64)`、`trigger_type VARCHAR(16) NOT NULL DEFAULT 'AUTO'` | idx `(job_code, fire_time DESC)`、`(status, fire_time DESC)`；**日志表按 `fire_time` 定期清理，不参与逻辑删除** |
-| `excel_task` | `task_id VARCHAR(64) NOT NULL`、`task_type VARCHAR(16) NOT NULL`、`biz_type VARCHAR(64) NOT NULL`、`file_id BIGINT`、`result_file_id BIGINT`、`status VARCHAR(16) NOT NULL`、`total_rows BIGINT`、`success_rows BIGINT`、`fail_rows BIGINT`、`progress INT NOT NULL DEFAULT 0`、`params_json TEXT`、`error_summary TEXT`、`operator_id BIGINT NOT NULL`、`started_at TIMESTAMPTZ`、`finished_at TIMESTAMPTZ`、`trace_id VARCHAR(64)` | UNIQUE `(task_id) WHERE deleted = false`；idx `(operator_id, create_time DESC)`、`(status)` |
+| `excel_task` | `task_id VARCHAR(64) NOT NULL`、`task_type VARCHAR(16) NOT NULL`、`biz_type VARCHAR(64) NOT NULL`、`file_id BIGINT`、`result_file_id BIGINT`、`status VARCHAR(16) NOT NULL`、`total_rows BIGINT`、`success_rows BIGINT`、`fail_rows BIGINT`、`progress INT NOT NULL DEFAULT 0`、`params_json TEXT`、`error_summary TEXT`、`operator_id BIGINT NOT NULL`、`started_at TIMESTAMPTZ`、`finished_at TIMESTAMPTZ`、`trace_id VARCHAR(64)` | UNIQUE `(task_id) WHERE deleted = false`；idx `(operator_id, created_at DESC)`、`(status)` |
 | `notify_template` | `template_code VARCHAR(64) NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`title_template VARCHAR(255) NOT NULL`、`content_template TEXT NOT NULL`、`variables_json TEXT`、`status` | UNIQUE `(template_code) WHERE deleted = false` |
-| `notice` | `receiver_id BIGINT NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`template_code VARCHAR(64)`、`title VARCHAR(255) NOT NULL`、`content TEXT NOT NULL`、`read_flag SMALLINT NOT NULL DEFAULT 0`、`read_time TIMESTAMPTZ`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`trace_id VARCHAR(64)` | idx `(receiver_id, read_flag, create_time DESC)` |
+| `notice` | `receiver_id BIGINT NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`template_code VARCHAR(64)`、`title VARCHAR(255) NOT NULL`、`content TEXT NOT NULL`、`read_flag SMALLINT NOT NULL DEFAULT 0`、`read_time TIMESTAMPTZ`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`trace_id VARCHAR(64)` | idx `(receiver_id, read_flag, created_at DESC)` |
 
 #### 5.4.2 iam（`eaio_iam`）
 
-| 表 | 业务列 | 索引与唯一 |
-|---|---|---|
-| `sys_user`（C-14） | `username VARCHAR(64) NOT NULL`、`password_hash VARCHAR(128) NOT NULL`、`nickname VARCHAR(64)`、`real_name VARCHAR(64)`、`mobile VARCHAR(32)`、`email VARCHAR(128)`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'`、`primary_org_id BIGINT`、`token_version INT NOT NULL DEFAULT 0`、`password_update_time TIMESTAMPTZ`、`last_login_time TIMESTAMPTZ`、`last_login_ip VARCHAR(64)`、`hire_date DATE`、`leave_date DATE`、`remark VARCHAR(255)` | UNIQUE `(username) WHERE deleted = false`；idx `(primary_org_id)`、`(mobile)` |
-| `user_password_history` | `user_id BIGINT NOT NULL`、`password_hash VARCHAR(128) NOT NULL` | idx `(user_id, create_time DESC)` |
-| `user_mfa` | `user_id BIGINT NOT NULL`、`secret VARCHAR(128) NOT NULL`、`recovery_codes TEXT`、`enabled SMALLINT NOT NULL DEFAULT 0`、`bound_time TIMESTAMPTZ` | UNIQUE `(user_id) WHERE deleted = false` |
-| `identity_provider` | `user_id BIGINT NOT NULL`、`provider_type VARCHAR(16) NOT NULL`、`external_id VARCHAR(255) NOT NULL`、`external_username VARCHAR(128)`、`last_sync_time TIMESTAMPTZ` | UNIQUE `(provider_type, external_id) WHERE deleted = false`；idx `(user_id)` |
-| `org_node` | `parent_id BIGINT NOT NULL DEFAULT 0`、`org_code VARCHAR(64) NOT NULL`、`org_name VARCHAR(128) NOT NULL`、`node_type VARCHAR(16) NOT NULL`、`level INT NOT NULL DEFAULT 1`、`sort_no INT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'PREPARING'`、`region_code VARCHAR(16)`、`leader_user_id BIGINT`、`remark VARCHAR(255)` | UNIQUE `(org_code) WHERE deleted = false`；idx `(parent_id)`、`(status)`、`(node_type)` |
-| `org_node_path`（派生表，5.1 第 4 条例外） | `ancestor_id BIGINT NOT NULL`、`descendant_id BIGINT NOT NULL`、`depth INT NOT NULL` | PK `(ancestor_id, descendant_id)`；idx `(descendant_id, depth)` |
-| `org_position` | `org_id BIGINT NOT NULL`、`position_code VARCHAR(64) NOT NULL`、`position_name VARCHAR(128) NOT NULL`、`position_level INT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(org_id, position_code) WHERE deleted = false` |
-| `user_org` | `user_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`、`position_id BIGINT`、`is_primary SMALLINT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'`、`joined_at TIMESTAMPTZ`、`left_at TIMESTAMPTZ` | UNIQUE `(user_id, org_id) WHERE deleted = false`；idx `(org_id)`、`(position_id)` |
-| `role` | `role_code VARCHAR(64) NOT NULL`、`role_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`（单亲继承）、`data_scope VARCHAR(16) NOT NULL DEFAULT 'SELF'`、`role_level INT NOT NULL DEFAULT 0`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(role_code) WHERE deleted = false`；idx `(parent_id)` |
-| `permission` | `perm_code VARCHAR(128) NOT NULL`、`perm_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`、`perm_type VARCHAR(16) NOT NULL`（MENU/BUTTON/API）、`module VARCHAR(32) NOT NULL`、`route_path VARCHAR(255)`、`icon VARCHAR(64)`、`condition_json TEXT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(perm_code) WHERE deleted = false`；idx `(parent_id)`、`(module)` |
-| `role_permission` | `role_id BIGINT NOT NULL`、`permission_id BIGINT NOT NULL`、`effect VARCHAR(8) NOT NULL DEFAULT 'ALLOW'`（ALLOW/DENY，DENY 优先） | UNIQUE `(role_id, permission_id) WHERE deleted = false` |
-| `user_role` | `user_id BIGINT NOT NULL`、`role_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`（角色生效的组织范围）、`granted_by BIGINT`、`granted_at TIMESTAMPTZ` | UNIQUE `(user_id, role_id, org_id) WHERE deleted = false`；idx `(user_id)`、`(role_id)` |
-| `data_scope_rule` | `role_id BIGINT NOT NULL`、`rule_type VARCHAR(16) NOT NULL`（ORG/USER）、`target_id BIGINT NOT NULL` | UNIQUE `(role_id, rule_type, target_id) WHERE deleted = false` |
-| `sod_rule` | `rule_code VARCHAR(64) NOT NULL`、`rule_name VARCHAR(128) NOT NULL`、`perm_code_a VARCHAR(128) NOT NULL`、`perm_code_b VARCHAR(128) NOT NULL`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(rule_code) WHERE deleted = false` |
-| `field_permission` | `role_id BIGINT NOT NULL`、`resource VARCHAR(64) NOT NULL`、`field VARCHAR(64) NOT NULL`、`access VARCHAR(16) NOT NULL`（VISIBLE/MASK/HIDDEN） | UNIQUE `(role_id, resource, field) WHERE deleted = false` |
+> **表清单以 iam 单模块册为唯一权威**：见 `04-…-P1-iam.md` 第 4 章（31 张表、逐表 DDL + `COMMENT ON`、69 个索引/约束、迁移 `V1__`–`V14__` + 种子）。本册不再复制 iam 逐表清单，避免两处漂移——**本册曾列出的 iam 表已被 iam 册取代**，两处差异一并作废：
+>
+> - 本册旧稿的 `user_mfa` → iam 册用 `sys_user.mfa_enabled` + `mfa_recovery_code`；`identity_provider` → iam 册用 `sys_user.source` + `external_id` 表达外部身份（SSO 配置在 `sso_config` / `ldap_config`）；
+> - iam 册另含 `position`、`employee`、`employee_sensitive`、`abac_policy`、`access_grant`、`auth_session`、`auth_refresh_token`、`login_attempt`、`data_scope_resource`、`field_permission`、`sod_rule_permission`、`sod_exemption`、`org_lifecycle_log`、`permission_snapshot`、`event_outbox`、`event_consume_record` 等表。
+>
+> **模块边界不受影响**：org / user / role / permission / data-scope / SoD 的所有权与契约归属仍是 iam（本册 4.1–4.6 的定位与依赖结论不变）；本册只保留"跨模块读取时用到的最小事实"——`eaio_iam.org_node` / `org_node_path` / `sys_user` / `position` / `user_org` 的语义（名称与列定义以 iam 册为准）。
 
 ### 5.4.3 索引与约束命名清单（具体名字，替代匿名写法）
 
@@ -831,14 +820,14 @@ public interface SoDCheckApi {
 | `notify_template` | `uk_notify_template_code`（partial）、`idx_notify_template_channel` |
 | `notice` | `idx_notice_receiver_read_created_at`（`receiver_id, read_flag, created_at DESC`） |
 
-iam 侧同规则（示例）：`uk_sys_user_username`、`idx_sys_user_primary_org`、`uk_org_node_org_code`、`idx_org_node_parent`、`uk_role_role_code`、`uk_permission_perm_code`、`uk_user_role_triple`（`user_id, role_id, org_id`）；完整清单在 iam 分册，本册只保证命名规则一致。
+iam 侧同规则（示例）：`uk_user_username`、`idx_user_primary_org`、`uk_org_node_org_code`、`idx_org_node_parent`、`uk_role_role_code`、`uk_permission_perm_code`、`uk_user_role_triple`（`user_id, role_id, org_id`）；完整清单在 iam 分册，本册只保证命名规则一致。
 
 **日志/关系表例外声明**：`job_run`（任务日志）与 `user_password_history` **不参与逻辑删除**（不带 `deleted`，按时间定期清理）；这是 5.1 第 3 条的显式例外。
 ### 5.5 初始化数据与首个管理员
 
 - **种子数据用可重复迁移**（`R__seed_platform.sql` / `R__seed_iam.sql`），全部 `INSERT ... ON CONFLICT DO NOTHING`（幂等，后续新增权限点会自动补）。**这是 5.1 第 13 条允许的 PG 私有语法唯一例外。**
 - 种子内容：内置参数（`is_builtin=1`，如 `sys.name`、`sys.file.max-upload-mb` 的展示项）、内置字典（性别/状态/组织类型…）、**权限点全集**（`platform:*`、`iam:*` 的 `perm_code`，与 3.12/4.7 的错误码同级维护）、内置角色模板（集团管理员 `ALL` / 子公司管理员 `ORG_AND_SUB` / 业务用户 `SELF` / 审计员只读）。
-- **首个管理员不写进迁移脚本**（迁移里塞密码 = 全库同密码）：`AdminBootstrap` 在启动时检测"无任何用户"→ 读环境变量 `EAIO_BOOTSTRAP_ADMIN_PASSWORD`；未提供时 **`local`/`it` profile 用 `admin/Admin@12345` 并打 WARN**，**其他 profile 直接启动失败并给出明确指引**；无论哪种方式都置 `password_update_time = null`（首次登录强制改密）。
+- **首个管理员不写进迁移脚本**（迁移里塞密码 = 全库同密码）：`AdminBootstrap` 在启动时检测"无任何用户"→ 读环境变量 `EAIO_BOOTSTRAP_ADMIN_PASSWORD`；未提供时 **`local`/`it` profile 用 `admin/Admin@12345` 并打 WARN**，**其他 profile 直接启动失败并给出明确指引**；无论哪种方式都置 `password_updated_at = null`（首次登录强制改密）。
 
 ---
 
@@ -929,7 +918,7 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 |---|---|---|
 | platform | `ParamApi`、`DictApi`、`FileApi`、`SchedulerApi`、`ExcelApi`、`CacheApi`、`MonitorApi` | C-4（`MonitorApi` 保留） |
 | iam | `AuthnApi`、`PermissionApi`、`RoleApi`、`DataScopeApi`、`SoDCheckApi`、`TenantCtxProvider`、`OrgApi`、`UserApi`、`EmployeeApi`、`OrgLifecycleApi` | C-5（后三者保留） |
-| common | `TenantCtx`/`TenantContextHolder`（新增，2.7）、`Result`/`PageResult`/`ErrorCode`/`BusinessErrorCode`/`IdempotencyStore`（P0） | P0 契约 V1 |
+| common | `Result`/`PageResult`/`ErrorCode`/`BusinessErrorCode`/`IdempotencyStore`（P0）**不变**；P1 只在 common 补门面（`RedisKit`/`SecurityUtils`/加解密/`ExcelKit`），**不承载 `TenantCtx`** | P0 契约 V1 |
 
 ### 7.4 本册交付物（M1–M5 文件级）
 
@@ -942,6 +931,7 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | V0.1 | 2026-09-19 | 初稿：M1–M5（platform 顺序 3 + iam 顺序 4），含 22 条上游冲突裁决、common 补齐清单、24 张表 DDL 骨架、10 条架构断言、两模块验收清单 |
+| V0.2 | 2026-09-20 | 批次一致性对齐：platform 表去 `sys_` 前缀（9 张）、统一列改 `created_at/created_by/updated_at/updated_by/version/deleted`（布尔）、新增 5.4.3 索引与约束命名清单、补 `NoticeApi`/`NotifyTemplateApi`、iam 号表改为指向 iam 单模块册表 7-1（旧号逐条映射）、iam 接口签名按 iam 册对齐、iam 表清单改为指向 iam 册第 4 章、`TenantCtx`/`TenantCtxProvider` 归 iam（**不放 common**） |
 
-> **待办（进入编码后逐条消账）**：本册"5 项依赖版本 M1 核实后锁定"（2.3.3）、ADR-0003/0004 落盘、P0 册 6.3 事项销账、`checkstyle` 规则集冻结。
+> **待办（进入编码后逐条消账）**：本册"5 项依赖版本 M1 核实后锁定"（2.3.3）、P0 册 6.3 事项销账、`checkstyle` 规则集冻结；`docs/agents/*` 同步项按第 6 章清单逐条回写（`architecture.md`/`database.md`/`api-conventions.md` 已同步，`CONTEXT.md` 术语补充待办）。
 
