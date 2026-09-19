@@ -13,6 +13,8 @@
 
 `docs/agents/` 是代理指令目录（本套 AGENTS 分册），是 `docs/` 下唯一不遵循序号命名的目录。
 
+另有两处非设计文档载体：根 [`CONTEXT.md`](../CONTEXT.md)（**术语表**：项目语言与契约名词的唯一定义处）与 [`docs/adr/`](../adr/)（**ADR**：难逆 + 需背景 + 真实取舍的决策，命名 `NNNN-<slug>.md`）。术语冲突以 CONTEXT.md 为准，已落 ADR 的决策以 ADR 为准（上游优先级仍见 [AGENTS.md](../../AGENTS.md)）。
+
 ## 开发队列（HLD 13.2）
 
 P0 工程骨架 + common → P1 平台底座（platform/iam/audit/workflow/approval/mdm/…）→ P2 业务域（oa/crm/inventory/finance/hr/project/scm/…）→ P3 开放定制与 AI 增强。
