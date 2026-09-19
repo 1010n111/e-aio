@@ -1,0 +1,14 @@
+# local profile：唯一声明连接信息的地方（`--spring.profiles.active=local`）。
+# 依赖：docker compose（PostgreSQL + Redis，P0 册 3.8 本地编排）。
+spring:
+  # 基础配置排除了数据源自动配置（无库可启动），这里把它放回来
+  autoconfigure:
+    exclude: ""
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eaio
+    username: eaio
+    password: eaio
+  data:
+    redis:
+      host: localhost
+      port: 6379

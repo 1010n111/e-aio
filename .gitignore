@@ -26,3 +26,9 @@ tmp/
 # 本机离线验证的临时物（settings/解包产物，不入库）
 .mvn-local/
 .tmpjavap/
+
+# 本机 npm 缓存（沙箱下默认缓存目录不可写）
+.npm-cache/
+
+# javap 解包探针目录
+.aio-probe*/

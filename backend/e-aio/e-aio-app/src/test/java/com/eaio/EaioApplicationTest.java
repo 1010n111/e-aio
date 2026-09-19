@@ -9,14 +9,11 @@ import org.springframework.boot.test.context.SpringBootTest;
  *
  * <p>脚本、迁移与外部依赖都属于后续票；本测试守住"骨架可运行"这一条（P0 验收）。
  *
- * <p>两条显式配置，都是"无依赖启动"这条路径本身要求的：迁移总开关关闭；数据源自动配置排除
- * （classpath 上有 Flyway starter 就会带来 spring-jdbc，Boot 因此无条件建数据源，没有 URL 时启动失败）。
+ * <p>不设任何额外属性：走的就是**生产配置本身**（基础配置不带连接信息、排除数据源自动配置，
+ * 迁移因此不装配）。加属性等于换个配置自证，测不到真实路径。
  * 迁移的**可执行**验证由 Testcontainers PostgreSQL 集成测试承担（本机无 Docker 时跳过，权威在 CI）。
  */
-@SpringBootTest(properties = {
-        "eaio.flyway.enabled=false",
-        "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"
-})
+@SpringBootTest
 class EaioApplicationTest {
 
     @Test

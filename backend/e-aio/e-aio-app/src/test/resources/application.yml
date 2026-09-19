@@ -1,7 +1,7 @@
 # 测试环境：不连数据库、不连 Redis。
-# 迁移总开关关闭（与本地无依赖启动同一条路径）；数据源自动配置一并排除——classpath 上有
-# Flyway starter 就带来 spring-jdbc，Boot 会无条件建数据源，没有 URL 时启动失败。
-# 迁移的**可执行**验证由 Testcontainers PostgreSQL 集成测试承担（在 CI 跑，本机无 Docker 时跳过）。
+# 与主配置一致地排除数据源自动配置（classpath 上有 spring-jdbc，Boot 会无条件建数据源，
+# 没有 URL 时启动失败）；迁移总开关关闭——迁移的**可执行**验证由 Testcontainers PostgreSQL
+# 集成测试承担（在 CI 跑，本机无 Docker 时跳过）。
 eaio:
   flyway:
     enabled: false

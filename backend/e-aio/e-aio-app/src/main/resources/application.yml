@@ -1,30 +1,22 @@
 spring:
   application:
     name: e-aio
-  profiles:
-    # 默认不激活任何 profile：不连数据库、不连 Redis，应用可直接启动（P0 验收：无依赖启动）
-    default: ""
-
-# 数据源与 Redis 只在 local profile 声明：
-# 基础配置里不出现连接信息，避免"空应用可启动"与"必须有一个数据库"互相矛盾（P0 册 3.5.2）。
----
-spring:
-  config:
-    activate:
-      on-profile: local
-  datasource:
-    url: jdbc:postgresql://localhost:5432/eaio
-    username: eaio
-    password: eaio
-  data:
-    redis:
-      host: localhost
-      port: 6379
+  # 基础配置只描述应用本身：不含数据源、不含 Redis、不激活任何 profile。
+  #
+  # 为什么必须显式排除 DataSourceAutoConfiguration（实测结论，2026-09-19）：
+  #   Boot 4 的 DataSourceAutoConfiguration 生效条件只有 @ConditionalOnClass(DataSource)
+  #   + @ConditionalOnMissingBean，**不检查是否配了 URL**。只要 classpath 上有 spring-jdbc
+  #   （本工程由 flyway starter 带入），它就会无条件建 HikariDataSource，没有 URL 时以
+  #   "Failed to determine a suitable driver class" 启动失败——那正是"无数据库即无法启动"。
+  #   因此基础配置排除它，连接信息与 Redis 全部下沉到 local profile（application-local.yml）。
+  autoconfigure:
+    exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
 
 # 每模块独立 Flyway 实例（P0 册 3.6）：
 #   modules 的取值与模块根包同名 —— 脚本目录 classpath:db/migration/<module>，
 #   默认 Schema eaio_<module>，历史表建在该 Schema 内，版本号在模块内独立递增。
-# 模块登记表的单一来源是 P0 册附录 6.1；新增模块要同时改这里。
+#   模块登记表的单一来源是 P0 册附录 6.1；新增模块要同时改这里。
+# 默认开启：生产不得静默跳过迁移；无数据库演示时设 eaio.flyway.enabled=false（见下）。
 eaio:
   flyway:
     enabled: true
