@@ -20,14 +20,14 @@ tags:
   - 公告与通知模板
 aliases:
   - P1-01 platform 详细设计
-  - 04-DD-P1-platform
+  - 04-DD-P1-3-platform
 related:
   - "04-企业级一体化管理系统-e-aio-详细设计说明书.md（总册 / 分册索引）"
   - "04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基.md（P0 册，格式与契约的权威范本）"
   - "03-企业级一体化管理系统-e-aio-概要设计说明书.md（HLD）"
   - "02-企业级一体化管理系统-e-aio-软件需求规格说明书.md（SRS）"
-  - "docs/adr/0001-统一-post-json-与恒-200-响应.md（ADR-0001）"
-  - "docs/adr/0002-每模块独立-schema-与-flyway.md（ADR-0002）"
+  - "docs/adr/0001-unified-post-and-always-200-result-contract.md（ADR-0001）"
+  - "docs/adr/0002-per-module-schema-and-flyway-instance.md（ADR-0002）"
 ---
 
 # 企业级一体化管理系统（e-aio）详细设计说明书 · 第 P1 册（分册一）· platform（基础平台能力）
@@ -194,7 +194,7 @@ com.eaio.platform
 │   ├─ ParamApi DictApi FileApi SchedulerApi ExcelApi CacheApi MonitorApi NoticeApi NotifyTemplateApi
 │   ├─ dto/                       ParamDTO ParamSaveCmd ParamWithSourceDTO DictTypeDTO …（5.3）
 │   ├─ CacheRegion.java CacheKey.java
-│   └─ port/                      AuditPort、AccessPort（P1 新增；由 audit/iam 反向实现，见 2.4）
+│   └─ port/                      AuditPort、OrgContextPort（P1 新增；由 audit/iam 反向实现，见 2.4）
 ├─ application/                   用例编排、@Transactional 边界、事件发布
 │   ├─ ParamAppService DictAppService FileAppService JobAppService
 │   ├─ ExcelTaskAppService NoticeAppService NotifyTemplateAppService AlertAppService
@@ -247,23 +247,24 @@ com.eaio.platform
 
 - iam **必须**依赖 platform（它要调 `ParamApi`/`DictApi`/`FileApi`），这是 HLD 11.1 的既定方向；
 - 若 platform 的 POM 再声明 `e-aio-iam`，则 `e-aio-platform ⇄ e-aio-iam` 形成**模块级依赖环**，Maven 在 reactor 排序阶段直接失败（不是运行期问题，是构建期硬失败）；
+- 即使写成 `<optional>true</optional>` 的 `iam.api` 依赖，**编译期边依然存在**，Modulith 的 `verify()` 判的就是模块依赖图；是否被容忍取决于框架的 `allowedDependencies` 行为——**架构不变量不押在框架容忍度上**（[ADR-0005](adr/0005-platform-zero-dependency-org-context.md)）；
 - 把 iam 的 `api` 包拆成独立 artifact 可以破环，但 CONTEXT.md 冻结"模块 = 一个 Maven 模块 + 一个根包 + 一个 Schema"，拆 artifact 会破坏该对应关系，且要给全部模块各拆一次——代价远大于收益。
 
-**裁决 P1-C4（本册新增）：编译期零模块依赖 + 运行期端口/适配器。**
+**裁决 P1-C4（本册新增，2026-09-21 按 ADR-0005 定案）：编译期零模块依赖 + 运行期自有端口/适配器。**
 
-1. **编译期**：`e-aio-platform/pom.xml` 只依赖 `e-aio-common`（外加 Spring/MyBatis-Plus/Redis/ShedLock/Fesod 等三方依赖）。**不出现** `e-aio-iam`、`e-aio-audit`。
+1. **编译期**：`e-aio-platform/pom.xml` 只依赖 `e-aio-common`（外加 Spring/MyBatis-Plus/Redis/ShedLock/Fesod 等三方依赖）。**不出现** `e-aio-iam`、`e-aio-audit`，**也不出现** `com.eaio.iam.*` / `com.eaio.audit.*` 的任何 import——由架构断言 **A7** 在编译期拦住（批次总册 4.1）。
 2. **运行期契约先行**：platform 在 `com.eaio.platform.api.port` 声明它需要的外部能力：
    - `AuditPort`（P1 新增）：`void record(AuditRecord record)`，用于文件上传/下载/删除、参数变更、导出等留痕；
-   - `AccessPort`（P1 新增）：`Optional<Long> currentUserId()`、`Optional<Long> currentOrgId()`，用于文件可见性判定与"我的未读公告"。
-3. **适配器由能力提供方实现**（方向单一，不成环）：audit 模块提供 `AuditPort` 的 `@Component` 实现，内部转调 `com.eaio.audit.api` 的 **`AuditApi`（写入）**——`AuditQueryApi`（查询）/`AuditChainApi`（举证）/`AuditAlertApi`（告警）是 audit 的对外接口，platform 不需要它们（只登记其存在，避免"平台去查审计"的反向依赖）；iam 模块提供 `AccessPort` 实现（内部读 `TenantCtx`/`com.eaio.iam.api.UserApi`）。platform 侧一律 `ObjectProvider<AuditPort>` / `ObjectProvider<AccessPort>` 形式注入（构造器注入 `ObjectProvider`，**不**用 `@Autowired(required=false)` 字段注入——`docs/agents/java-conventions.md` 禁字段注入）。
+   - `OrgContextPort`（P1 新增，**与 iam 册同名同形**）：`Optional<Long> currentUserId()`、`Optional<Long> currentOrgId()`、`boolean isSystemContext()`，用于文件可见性判定与"我的未读公告"。位置 `com.eaio.platform.api.port`（本册 P1-C4 第 2 条），实现由 iam 侧适配器提供、application shell 装配（[ADR-0005](adr/0005-platform-zero-dependency-org-context.md)）。
+3. **适配器由能力提供方实现**（方向单一，不成环）：audit 模块提供 `AuditPort` 的 `@Component` 实现，内部转调 `com.eaio.audit.api` 的 **`AuditApi`（写入）**——`AuditQueryApi`（查询）/`AuditChainApi`（举证）/`AuditAlertApi`（告警）是 audit 的对外接口，platform 不需要它们（只登记其存在，避免"平台去查审计"的反向依赖）；iam 模块提供 `OrgContextPort` 实现（内部读 `TenantCtx`/`com.eaio.iam.api.UserApi`），**由 `e-aio-app` 装配注入**。platform 侧一律 `ObjectProvider<AuditPort>` / `ObjectProvider<OrgContextPort>` 形式注入（构造器注入 `ObjectProvider`，**不**用 `@Autowired(required=false)` 字段注入——`docs/agents/java-conventions.md` 禁字段注入）。
 4. **缺席降级**（本册明确定义，不允许"什么都不做"）：
 
 | 端口 | 缺席时的行为 | 安全性方向 |
 |---|---|---|
 | `AuditPort` | 写结构化审计日志（`logger` 名 `com.eaio.platform.audit.fallback`，字段含 `traceId`/`operatorId`/`action`/`resource`/`result`/`bizType`），并在 `MonitorApi.metrics()` 暴露 `platform.audit.fallback.count` | 留痕能力降级但**不静默丢弃**：日志可被采集，且计数可告警 |
-| `AccessPort` | 文件可见性判定退化为"**仅上传者本人 + 管理员**"；`NoticeApi.getUnread` 只返回 `scopeType = ALL` 的公告 | **fail-closed**：拒绝多于放行。绝不出现"拿不到身份就当作有权限" |
+| `OrgContextPort` | 文件可见性判定退化为"**仅上传者本人 + 管理员**"；`NoticeApi.getUnread` 只返回 `scopeType = ALL` 的公告 | **fail-closed**：拒绝多于放行。绝不出现"拿不到身份就当作有权限" |
 
-5. **降级不是永久态**：`AccessPort` 缺席（iam 未就绪）期间，platform 的 HTTP 面**不得对公网暴露**（3.10.6 风险条目）；这是 M1–M3 的部署约束，不是设计意图。
+5. **降级不是永久态**：`OrgContextPort` 缺席（iam 未就绪）期间，platform 的 HTTP 面**不得对公网暴露**（3.10.6 风险条目）；这是 M1–M3 的部署约束，不是设计意图。
 
 > **被否决的备选**：「platform 直接 `import com.eaio.iam.api.UserApi`」——编译期成环，构建失败；「把 TenantCtx 放 platform，iam 反向填充」——`TenantCtx` 属 common（被全部模块只读消费），放 platform 会让 common 层失去该上下文，且 iam 会在自己的启动期依赖 platform 的类加载顺序，脆弱。
 
@@ -1909,7 +1910,7 @@ COMMENT ON COLUMN eaio_platform.notify_template.channel IS 'P1 只落地 SITE；
 | `MonitorApi` | 监测（指标快照/健康/告警列表，只读） | 管理端与其他模块的只读诊断 | `MonitorApiImpl` |
 | `NoticeApi` | 公告与站内消息（发布/未读/已读/分页） | 全部模块（业务通知） | `NoticeApiImpl` |
 | `NotifyTemplateApi` | 通知模板（渲染/分页/保存） | 需要发通知的模块（P2 起） | `NotifyTemplateApiImpl` |
-| `port/AuditPort`、`port/AccessPort`（P1 新增） | 由 audit / iam 反向实现的端口（2.4.2） | — | audit / iam 侧适配器 |
+| `port/AuditPort`、`port/OrgContextPort`（P1 新增） | 由 audit / iam 反向实现的端口（2.4.2） | — | audit / iam 侧适配器 |
 
 **契约规则**：只增不改（新增方法给 `default` 实现或新增接口）；跨模块禁止引用 `application`/`domain`/`infrastructure`（ArchUnit + Modulith 双重拦截）；`api` 包内不放 `@RestController`、领域实体、Mapper。
 
@@ -2132,7 +2133,7 @@ public interface MonitorApi {
     List<AlertDTO> alerts();
 }
 
-/** 公告与站内消息。getUnread/markRead 依赖 AccessPort 取当前用户（缺席时只返回 ALL 范围，2.4.2）。 */
+/** 公告与站内消息。getUnread/markRead 依赖 OrgContextPort 取当前用户（缺席时只返回 ALL 范围，2.4.2）。 */
 public interface NoticeApi {
     long publish(NoticePublishCmd cmd);
     List<NoticeDTO> getUnread();            // 内部按分页默认值取前 20 条
@@ -2253,7 +2254,7 @@ public interface NotifyTemplateApi {
 | 里程碑 | 内容 | 完成判据（Exit Criteria） |
 |---|---|---|
 | **M1**（骨架 + 参数/字典） | 五层分包与 `package-info` 收紧；`PlatformErrorCode`（20000 段）；V2/V3 + `R__platform_seed.sql`；`ParamApi`/`DictApi` 与实现；参数/字典 REST + 前端页面；`RedisKeys`/`RedisKit` 在 common 落地；ArchUnit 4 条新断言；删除 `DemoController` | 6.5 的 1/2/3/9/10/11/12 全绿；参数与字典页面可用 |
-| **M2**（文件 + 缓存 + 事件） | `FileStorage` SPI 与 `LocalFileStorage`；直传/分片/合并/预签名；`CacheApi` + 两级缓存 + 失效广播；V4/V7；`event_delivery` + 重试任务 + 死信重放；`AuditPort`/`AccessPort` 端口与降级 | 6.5 的 4/7 全绿；文件页可用；`event_delivery` 死信可重放 |
+| **M2**（文件 + 缓存 + 事件） | `FileStorage` SPI 与 `LocalFileStorage`；直传/分片/合并/预签名；`CacheApi` + 两级缓存 + 失效广播；V4/V7；`event_delivery` + 重试任务 + 死信重放；`AuditPort`/`OrgContextPort` 端口与降级 | 6.5 的 4/7 全绿；文件页可用；`event_delivery` 死信可重放 |
 | **M3**（任务 + Excel + 监测 + 公告） | ShedLock 接入（锁表 `shedlock`）+ 6 个内置任务；`ExcelKit`（common）与 `ExcelApi` 异步任务；V5/V6/V8/V9；`alert_rule`/`alert` + 评估任务；`NoticeApi`/`NotifyTemplateApi`；监测页与告警页 | 6.5 的 5/6/8 全绿；Excel 任务页含错误明细下载；监测页展示快照与告警 |
 
 ## 7. 附录
@@ -2373,7 +2374,7 @@ public interface NotifyTemplateApi {
 
 | P0 册 6.3 条目 | 本册落实 | 结论/承接 |
 |---|---|---|
-| ① `TenantCtx` 实现与过滤器 | **不在本册** | 归 iam 册；platform 只消费 `AccessPort`（2.4.2），缺席时 fail-closed |
+| ① `TenantCtx` 实现与过滤器 | **不在本册** | 归 iam 册；platform 只消费 `OrgContextPort`（2.4.2），缺席时 fail-closed |
 | ② `@AuditLog` 切面与 audit 接入 | **部分**：platform 侧提供 `AuditPort` 端口 + 事件 + 降级口径（3.3.6） | 切面与 WORM 落库归 audit 册 |
 | ③ platform 参数/字典/`FileApi`/`Scheduler` 表结构与 API 契约 | **本册落实**：4.3（20 张表）、5.4（9 个接口冻结 V1） | 完成，冻结 |
 | ④ 数据权限 SQL 改写 | **不在本册** | 归 iam 册；platform 的文件可见性只做粗过滤（3.3.4），细粒度由 iam 数据权限落地后接管 |
@@ -2402,9 +2403,9 @@ public interface NotifyTemplateApi {
 | 编号 | 疑点 | 本册的处理与代价 |
 |---|---|---|
 | Q1 | **表名单复数**：本册任务书冻结"复数"，P1 批次总册 3.5 裁决"单数"（并覆盖 HLD 4.2 / P0 册 3.6 的措辞）。本册按**批次总册 · 单数**执行 | 若评审改回复数：20 张表机械改名（`param→params`、`dict_type→dict_types`、`dict_item→dict_items`、`file→files`、`file_upload_session→file_upload_sessions`、`file_chunk→file_chunks`、`file_binding→file_bindings`、`job→jobs`、`job_run→job_runs`、`excel_task→excel_tasks`、`excel_task_error→excel_task_errors`、`event_delivery→event_deliveries`、`alert_rule→alert_rules`、`alert→alerts`、`notice→notices`、`notice_target→notice_targets`、`notice_read→notice_reads`、`notify_template→notify_templates`、`param_change_log→param_change_logs`；`shedlock` 不动），索引名随表名同步；脚本与代码未落地，故**零迁移成本** |
-| Q2 | 统一列词根：任务书写 `created_at/…` 后又注明"沿用库内既有 `*_time`/`*_by` 词根"，`docs/agents/database.md` 用 `create_time/create_by` | 本册取 `created_at/created_by/updated_at/updated_by`（与任务书主列表 + 批次总册 3.5 一致）；代价：与 database.md 的词根不一致，需在该文件或 P0 册统一（属船长维护文件，未改） |
+| Q2 | 统一列词根 | **已定案**：全批次统一 `created_at / created_by / updated_at / updated_by / version / deleted`（`deleted` 为 `BOOLEAN`），`docs/agents/database.md` 已按此同步；`BaseDO` 字段名与列名一一对应 |
 | Q3 | ShedLock 的 Spring Boot 4.1 兼容性 | 本册按 `jdbc-template` provider 设计（锁表 `shedlock`）；若 M1 实测不兼容，回退为自建锁表 + `SELECT … FOR UPDATE`，**表结构不变** |
-| Q4 | `AuditPort`/`AccessPort` 端口位置（`com.eaio.platform.api.port`）与"platform 只依赖 iam/audit 的 `api` 包"的字面要求冲突 | 采用端口 + 反向适配器（2.4.2）：Maven 模块图不允许双向边；若评审坚持字面口径，需先拆出 `e-aio-platform-api` 之类 artifact（破坏"一模块一 artifact"约定） |
+| Q4 | `AuditPort`/`OrgContextPort` 端口位置（`com.eaio.platform.api.port`）；原任务书要求"platform 经 iam/audit 的 `api` 包" | **已由 [ADR-0005](adr/0005-platform-zero-dependency-org-context.md) 定案**：platform **零反向依赖**（连 `api` 包都不依赖），需求一律经自有端口 + 应用壳装配满足；原"可选依赖 `iam.api`"写法作废（成环 + 押框架容忍度）。端口 + 反向适配器（2.4.2）：Maven 模块图不允许双向边；若评审坚持字面口径，需先拆出 `e-aio-platform-api` 之类 artifact（破坏"一模块一 artifact"约定） |
 | Q5 | 事件可靠性采用自建 `event_delivery`（轻量 outbox）而非 Spring Modulith 的事件发布登记表 | 自建方案多约 200 行代码与一张表，换来尝试次数/死信/人工重放/告警对齐；若 P2 评估切换为框架实现，`event_delivery` 需迁移（代价已登记） |
 
 ### 修订记录

@@ -18,7 +18,7 @@ aliases:
 related:
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书]]"
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基]]"
-  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座]]"
+  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座]]"
   - "[[03-企业级一体化管理系统-e-aio-概要设计说明书]]"
   - "[[02-企业级一体化管理系统-e-aio-软件需求规格说明书]]"
 ---
@@ -27,7 +27,7 @@ related:
 
 > **项目名称**：企业级一体化管理系统（e-aio）
 > **编制依据**：GB/T 8567-2006《计算机软件文档编制规范》、GB/T 9385-2008《计算机软件需求规格说明规范》
-> **上游文档**：[[01-企业级一体化管理系统-e-aio-可行性研究报告|01-可行性研究报告]]、[[02-企业级一体化管理系统-e-aio-软件需求规格说明书|02-软件需求规格说明书（SRS）]]、[[03-企业级一体化管理系统-e-aio-概要设计说明书|03-概要设计说明书（HLD）]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|第 P0 册 · 工程地基]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座|第 P1 册 · 平台底座]]
+> **上游文档**：[[01-企业级一体化管理系统-e-aio-可行性研究报告|01-可行性研究报告]]、[[02-企业级一体化管理系统-e-aio-软件需求规格说明书|02-软件需求规格说明书（SRS）]]、[[03-企业级一体化管理系统-e-aio-概要设计说明书|03-概要设计说明书（HLD）]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|第 P0 册 · 工程地基]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座|第 P1 册 · 平台底座]]
 > **模块**：`iam`（`com.eaio.iam` / Schema `eaio_iam` / 错误码段 `21000–21999` / 迁移目录 `classpath:db/migration/iam`，登记表见 P0 册 6.1）
 > **版本**：V1.0（首版，待评审）
 > **日期**：2026-09-20
@@ -113,7 +113,7 @@ related:
 1. `docs/02-企业级一体化管理系统-e-aio-软件需求规格说明书.md`（SRS V1.1）
 2. `docs/03-企业级一体化管理系统-e-aio-概要设计说明书.md`（HLD V1.1）
 3. `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基.md`（P0 册，契约与工程地基权威）
-4. `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座.md`（同批次兄弟册，platform 契约）
+4. `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座.md`（同批次兄弟册，platform 契约）
 5. `docs/adr/0001-unified-post-and-always-200-result-contract.md`、`docs/adr/0002-per-module-schema-and-flyway-instance.md`、`docs/adr/0003-protocol-endpoint-exceptions.md`、`docs/adr/0004-cross-schema-readonly-predicate.md`
 6. `docs/agents/{architecture,api-conventions,database,java-conventions,frontend-conventions,build-and-test}.md`
 7. `CONTEXT.md`（领域词汇表）
@@ -277,11 +277,12 @@ package com.eaio.iam;
            : tenantCtx.getObject().currentOrgId().orElse(null);
    ```
 3. **缺席降级语义**：provider 不存在时 `currentOrgId()` 视作 `empty`；文件落 `org_id = NULL` 并记 WARN；任务的 `runAs` 不可用（`SchedulerApi` 拒绝需要组织身份的任务注册，返回 `20103` 类错误）。
-4. **环的合法性**：`iam → platform`（正常依赖，`platform::api`）+ `platform → iam::api`（可选依赖）构成**模块级双向可见**。批次总册 3.1 已裁决该形态成立（"接口在上游模块、实现依赖由上上游提供"）；本册补充一条**机器判据**：M1 冻结 `iam.api` 后立即执行 `ApplicationModules.verify()`——
-   - 若 `verify()` 通过（Modulith 允许显式 `allowedDependencies` 的双向 `api` 依赖），主方案即为最终方案，platform 无需任何额外端口；
-   - 若 `verify()` 报 `iam -> platform -> iam` 环（Modulith 的环检测触发），则启用**备选方案 B**：platform 侧改声明自有端口 `com.eaio.platform.api.OrgContextPort`（`Optional<Long> currentOrgId()` / `Long requireOrgId()`），由 iam 提供 `PlatformOrgContextAdapter` 实现（依赖方向 iam → platform，零环）。
-5. **两条路径的取舍**：主方案省一个端口与适配器，但依赖 Modulith 的环容忍度（需 M1 实测，**不得靠假设**）；备选 B 多两个类型与一层间接，但**结构上不可能成环**，且 platform 的替换/裁剪（NFR-EXT-01）不受 iam 影响。判据是 M1 实测结果，不是偏好。
-6. **禁止**：platform 通过反射/bean 名查找 iam 的实现 Bean（运行期失败不可测，被否决）；platform 注入 iam 的非 `api` 类型（ArchUnit 会红）。
+4. **环的合法性——已定案，不再需要实测**：**platform 对 iam 是零依赖**（连 `com.eaio.iam.api` 都不依赖），模块图里不存在 `platform → iam` 这条边，**结构上不可能成环**（[ADR-0005](adr/0005-platform-zero-dependency-org-context.md)，2026-09-21）。因此：
+   - 会话/权限上下文（`TenantCtx` / `TenantCtxProvider`）**全部归 iam**，`TenantContextHolder`（ThreadLocal）留在 iam `infrastructure`，**不放 common**；
+   - platform 侧声明**自有端口** `com.eaio.platform.api.OrgContextPort`：`Optional<Long> currentOrgId()` / `boolean isSystemContext()`（**不含** `requireOrgId`：platform 不掌握"必须要有组织"的业务语义，缺失即走系统上下文降级）；
+   - iam 提供适配器 `PlatformOrgContextAdapter`（读 `TenantCtxProvider`）实现该端口，**由 `e-aio-app` 装配注入**；依赖方向 iam → platform，零环。
+5. **为什么直接采用结构消除而不是"先实测 Modulith 是否容忍"**：可选项依赖 `iam.api` 仍然是编译期边，是否合法取决于框架对 `@ApplicationModule` 的容忍度——架构不变量不该押在框架行为上；而"零依赖 + 自有端口"多出的成本只是一个接口与一个适配器（[ADR-0005](adr/0005-platform-zero-dependency-org-context.md) 背景与代价）。
+6. **禁止**：platform 通过反射/bean 名查找 iam 的实现 Bean（运行期失败不可测，被否决）；platform 引用 iam 的任何包（含 `api`）——由架构断言 A7 在编译期拦住。
 
 **audit 侧同构处理**：`PermissionAuditApi` 定义在 `com.eaio.audit.api`（audit 落库，iam 不自建审计表）；iam 在 M4 加 `optional` 依赖并 `ObjectProvider<PermissionAuditApi>` 可选注入。M2–M3 期间 iam 只发布 `PermissionChangedEvent`（`AFTER_COMMIT`）+ 结构化日志（`event=PERMISSION_CHANGE`），audit 上线后由 outbox 补投（3.11.4）。Modulith 的 `allowedDependencies` 需模块存在才能声明，故 `"audit::api"` 在 M4 随 `e-aio-audit` 落地时追加。
 
@@ -289,7 +290,7 @@ package com.eaio.iam;
 
 | # | 冲突点 | 上游写法 | 本册裁决 | 理由/影响 |
 |---|---|---|---|---|
-| I-1 | 审计列名 | P0 册 4.4 `BaseDO`、P1 platform 册裁决 C-1 用 `create_by/create_time/update_by/update_time` | **采用 `created_at/created_by/updated_at/updated_by`** | 指令冻结；语义同词根。代价：与 `common.persistence.BaseDO`（P1 platform 册 2.7 规划）字段名不一致，需在 P1 收口时统一（列入 7.6 遗留 L-1） |
+| I-1 | 审计列名 | 早期稿用 `create_by/create_time/update_by/update_time`（RuoYi 词根） | **已定案：`created_at/created_by/updated_at/updated_by/version/deleted`（`deleted` 为 `BOOLEAN`）** | 批次总册 3.5 全批次统一；`docs/agents/database.md` 与 `common.persistence.BaseDO` 已按此同步，遗留 L-1 关闭 |
 | I-2 | 组织生命周期枚举 | platform 册裁决 C-2 四态 `PREPARING/RUNNING/CANCELLED/ARCHIVED`；HLD 5.2 中文"筹备→运营→注销→归档" | **采用 `PREPARING/ACTIVE/DEREGISTERED/ARCHIVED`** | 指令冻结；语义与 HLD 一致，仅英文枚举名不同 |
 | I-3 | 数据范围枚举 | platform 册裁决 C-3 六值 `SELF/DEPT/ORG/ORG_AND_SUB/ALL/CUSTOM` | **采用七值，增 `DEPT_AND_SUB`** | 指令冻结；`DEPT_AND_SUB` 是"本部门及下级部门"必需值，缺省会导致部门层级授权退化为 `DEPT` |
 | I-4 | 表名形态 | 本册原始指令为 snake_case **复数**（`users`/`org_nodes`/`auth_sessions`）；批次总册 3.5 与 P1 platform 册裁决 C-13/C-14 为**单数** | **采用 snake_case 单数、模块内无前缀**（`org_node`、`role`、`auth_session`）；**用户主档例外用 `sys_user`**（PG 保留字 `user`） | 批次一致优先（两册并存不得漂移）；`sys_user` 是保留字硬约束下的必有例外。若评审要求复数，改名是机械操作（唯一真源在 4.3 DDL） |
@@ -2765,7 +2766,7 @@ P0 已有 10 个 `@Test`（模块边界、命名接口、模块登记、common �
 
 | 编号 | 遗留项 | 影响 | 承接 |
 |---|---|---|---|
-| L-1 | 审计列名与 `common.persistence.BaseDO` 不一致（本册 `created_at/…` vs platform 册裁决的 `create_time/…`；逻辑删除列 `BOOLEAN` vs `SMALLINT`） | 两册并存时 DO 基类需二选一；iam 在 M2 先用自有 `IamBaseDO`，不阻塞 | P1 收口评审：统一后同步 `database.md` 与 P0 册 4.4（见 2.4.4 I-1/I-12） |
+| L-1 | ~~审计列名与 `BaseDO` 不一致~~ | **[已关闭 2026-09-21]** 全批次统一为 `created_at/created_by/updated_at/updated_by/version/deleted`（`deleted BOOLEAN`）；`database.md` 已同步，iam 不再需要自有 `IamBaseDO`，直接用 `com.eaio.common.persistence.BaseDO` | — |
 | L-2 | OAuth2/SAML2 协议端点与 ADR-0001「全部 POST + JSON + 恒 200」冲突 | 需在 ADR-0001 补登"协议端点例外"（**已登记为 [ADR-0003](adr/0003-protocol-endpoint-exceptions.md)**：OAuth2/SAML2/文件流封闭清单 + 逐路径登记到 `api-conventions.md` + 前端不套 `Result`） | P1 评审 → ADR-0001 修订（本册不改 ADR） |
 | L-3 | 密钥管理（KMS/HSM）未引入：P1 为"环境变量/参数中心注入 + 手工轮换" | 密钥轮换需重启加载（`JwtKeyProvider` 支持双 kid 热切换；字段密钥轮换走 `iam.field.rekey` 任务） | P3 评估 KMS（SRS NFR-SEC-02 的长期口径） |
 | L-4 | 短信 MFA 未实现（只 TOTP） | FR-SEC-02 的"短信"通道缺失 | P2/P3 随 `integration`（短信通道）+ `NoticeApi` 落地；`sys_user` 无需改表（新增 `user_mfa_factor` 表即可） |

@@ -216,7 +216,7 @@ P0 册 6.2 把下列门面写进「契约 V1 冻结清单」，但**代码里不
 | 资产 | 包 | 用途 | 备注 |
 |---|---|---|---|
 | `TenantCtx` + `TenantCtxProvider` | `com.eaio.iam.api`（iam 侧） | 当前组织上下文（4.5） | 值对象 + 只读接口；`TenantContextHolder`（ThreadLocal）留在 iam `infrastructure`，**不放 common** |
-| `BaseDO` | `com.eaio.common.persistence`（新增） | 审计字段基类（`id/createBy/createTime/updateBy/updateTime/version/deleted`） | **纯 POJO，不带任何持久层注解**——`commonIsPure` 禁止 common 依赖 `org.apache.ibatis..`/`jakarta.persistence..`；字段由 MyBatis-Plus 全局配置识别（5.2.0） |
+| `BaseDO` | `com.eaio.common.persistence`（新增） | 审计字段基类（Java 字段 `id/createdBy/createdAt/updatedBy/updatedAt/version/deleted`，对应列 `id/created_by/created_at/updated_by/updated_at/version/deleted`，见批次总册 3.5） | **纯 POJO，不带任何持久层注解**——`commonIsPure` 禁止 common 依赖 `org.apache.ibatis..`/`jakarta.persistence..`；字段由 MyBatis-Plus 全局配置识别；`deleted` 为 `Boolean`（列 `BOOLEAN`） |
 | `CryptUtils` | `com.eaio.common.crypto`（新增） | AES-GCM 加解密（NFR-SEC-02） | 只用 JDK `javax.crypto`；密钥来自环境变量，**不入库、不入 Git** |
 | `RedisKit` / `RedisKeys` / `DistributedLock` / `RateLimiter` | `com.eaio.common.redis`（新增） | Redis 门面（Redisson 底座） | 键规范沿用 P0 幂等键前缀 `eaio:{env}:`；`RedisKeys` 是键的唯一构造点 |
 | `ExcelKit` / `ImportResult` / `ExcelError` / `ExcelReadOptions` / `ExcelWriteOptions` | `com.eaio.common.excel`（新增） | Fesod 流式读写门面 | 字段映射复用 Fesod `@ExcelProperty`（P0 册 4.3） |
@@ -580,7 +580,10 @@ record TenantCtx(long userId, String username, long orgId, String orgPath,
 
 **数据权限 SQL 改写（唯一落点 + 关键决策 C-22）**：MyBatis-Plus `DataPermissionInterceptor` + `MultiDataPermissionHandler`（由 iam 实现、app 装配）；Mapper 方法用 `@DataScope(resource, orgColumn, userColumn)` **显式标注**（opt-in）。
 
-> **裁决 C-22（本册新增，解决 P0 "禁跨 Schema SQL" 与数据权限的冲突）**：数据权限过滤**不使用跨 Schema 子查询**。`TenantCtx.orgIds` 在**认证时由 iam 解析并缓存**（Redis，与权限缓存同生命周期），过滤器只生成 `orgColumn IN (:orgIds)` 这类**同 Schema 条件**。理由：P0/HLD 明确"禁跨 Schema SQL"，为数据权限破例会把例外变成常态；而组织子树 id 集合在本项目量级（公司/部门数千以内）完全可控。**上限保护**：`orgIds` 超过 `eaio.iam.data-scope.max-org-ids`（默认 2000）时**报错 `21037`** 并提示改用 `ALL` 角色范围或 `CUSTOM` 规则，**不生成超长 IN**。
+> **裁决 C-22（本册新增，2026-09-21 按 [ADR-0004](../adr/0004-cross-schema-readonly-predicate.md)/[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md) 定案）**：数据权限过滤的取舍与上限：
+> - **注入点唯一**：谓词只由 iam 的 `DataPermissionInterceptor` 生成，业务模块只声明 `@DataScope(resource, orgColumn, userColumn)`；**platform 与业务模块不得手写组织谓词**。
+> - **三档降级**：可见组织数 ≤ `inline-max`（默认 2000）→ 内联 `orgColumn = ANY(ARRAY[...])`；≤ `exists-max`（默认 50000）→ `EXISTS` 只读谓词（对 `eaio_iam.org_node_path`，ADR-0004 登记的跨 Schema 例外，应用角色**只授列级 SELECT**）；超限 → **停用该数据范围规则**（恒假 `1=0` + 明确错误码 + WARN 告警），**不退化为全量可见，也不硬拒绝业务请求**。
+> - **platform 零反向依赖**：platform 不 import `com.eaio.iam.*`（连 `api` 都不依赖，ADR-0005），需要"当前组织/用户"时只经自有端口 `com.eaio.platform.api.port.OrgContextPort`（`currentUserId()`/`currentOrgId()`/`isSystemContext()`），实现由 iam 适配器提供、`e-aio-app` 装配；缺席时按系统上下文降级（只读系统级参数/字典、文件 `org_id` 落 `NULL` 并记 WARN），**fail-closed 不放行**。
 
 SQL 片段口径：`SELF → userColumn = :userId`；`DEPT → orgColumn = 用户所属部门`；`ORG → orgColumn = :orgId`；`ORG_AND_SUB → orgColumn IN (:orgIds)`；`ALL → 无附加条件`；`CUSTOM → orgColumn IN (:ruleOrgIds) OR userColumn IN (:ruleUserIds)`。多个角色**取并集**（授权取并、DENY 不参与数据范围）。
 **安全兜底（必须实现）**：带 `@DataScope` 的方法若取不到 `TenantCtx`（或未认证）→ **抛 10401 拒绝执行**，绝不"降级为不过滤"。
@@ -588,7 +591,7 @@ SQL 片段口径：`SELF → userColumn = :userId`；`DEPT → orgColumn = 用�
 ### 4.6 对外契约（`com.eaio.iam.api`）
 
 ```java
-// 权威签名以 04-…-P1-iam.md 第 7 章为准；本册只镜像，改签名先改 iam 册
+// 权威签名以 04-…-P1-4-iam.md 第 7 章为准；本册只镜像，改签名先改 iam 册
 public interface AuthnApi {                        // 非 HTTP 场景（任务、消息）构造身份
     TokenDTO login(LoginCmd cmd);
     TokenDTO refresh(RefreshCmd cmd);
@@ -670,7 +673,7 @@ public interface SoDCheckApi {
 
 ### 4.7 错误码（iam 段 21000–21999）
 
-> **本册不自持 iam 号表**：`eaio_iam` 段（21000–21999）的**唯一号源是 `04-企业级一体化管理系统-e-aio-详细设计说明书-P1-iam.md` 表 7-1**（已分配 `21001–21092`，其余留空，空号不回收）。本册旧版自持的 `21100–21146` 号表**作废**，正文引用已按下表改写；platform 段仍见 3.12（20000–20999）。
+> **本册不自持 iam 号表**：`eaio_iam` 段（21000–21999）的**唯一号源是 `04-企业级一体化管理系统-e-aio-详细设计说明书-P1-4-iam.md` 表 7-1**（已分配 `21001–21092`，其余留空，空号不回收）。本册旧版自持的 `21100–21146` 号表**作废**，正文引用已按下表改写；platform 段仍见 3.12（20000–20999）。
 
 **本册正文引用的 iam 码 → iam 册表 7-1**
 
@@ -770,7 +773,7 @@ public interface SoDCheckApi {
 | platform | `excel_task` | 本册新增 | M2 | 导入/导出异步任务（**一表覆盖两向**） |
 | platform | `notify_template` / `notice` | 本册新增 | M3 | 消息模板与站内消息 |
 | iam | `sys_user` | **C-14 改名**（HLD 的 `user` 是保留字） | M2 | 用户主档 |
-| iam | **iam 全部 31 张表**（含 `user_password_history`、`mfa_recovery_code`、`position`、`user_org`、`employee`、`auth_session`、`auth_refresh_token`、`login_attempt`、`sso_config`、`ldap_config`、`abac_policy`、`access_grant`、`sod_rule_permission`、`sod_exemption`、`field_permission`、`permission_snapshot`、`org_lifecycle_log`、`event_outbox`、`event_consume_record` …） | 逐表见 `04-…-P1-iam.md` 第 4 章（**唯一权威**，本册不复制） | M2–M5 | 组织/人员/认证/授权/数据权限/SoD/外部身份/会话/发件箱 |
+| iam | **iam 全部 31 张表**（含 `user_password_history`、`mfa_recovery_code`、`position`、`user_org`、`employee`、`auth_session`、`auth_refresh_token`、`login_attempt`、`sso_config`、`ldap_config`、`abac_policy`、`access_grant`、`sod_rule_permission`、`sod_exemption`、`field_permission`、`permission_snapshot`、`org_lifecycle_log`、`event_outbox`、`event_consume_record` …） | 逐表见 `04-…-P1-4-iam.md` 第 4 章（**唯一权威**，本册不复制） | M2–M5 | 组织/人员/认证/授权/数据权限/SoD/外部身份/会话/发件箱 |
 | iam | `org_node` / `org_node_path` | HLD §4.1.1 点名 | M2 | 无限级组织树 + 闭包表 |
 | iam | `position` / `org_position` / `user_org` | 见 iam 册（岗位定义与挂载、多组织兼任 FR-HR-08） | M3 | 岗位与任职 |
 | iam | `role` / `permission` / `role_permission` / `user_role` | 见 iam 册 | M2/M3 | RBAC |
@@ -797,7 +800,7 @@ public interface SoDCheckApi {
 
 #### 5.4.2 iam（`eaio_iam`）
 
-> **表清单以 iam 单模块册为唯一权威**：见 `04-…-P1-iam.md` 第 4 章（31 张表、逐表 DDL + `COMMENT ON`、69 个索引/约束、迁移 `V1__`–`V14__` + 种子）。本册不再复制 iam 逐表清单，避免两处漂移——**本册曾列出的 iam 表已被 iam 册取代**，两处差异一并作废：
+> **表清单以 iam 单模块册为唯一权威**：见 `04-…-P1-4-iam.md` 第 4 章（31 张表、逐表 DDL + `COMMENT ON`、69 个索引/约束、迁移 `V1__`–`V14__` + 种子）。本册不再复制 iam 逐表清单，避免两处漂移——**本册曾列出的 iam 表已被 iam 册取代**，两处差异一并作废：
 >
 > - 本册旧稿的 `user_mfa` → iam 册用 `sys_user.mfa_enabled` + `mfa_recovery_code`；`identity_provider` → iam 册用 `sys_user.source` + `external_id` 表达外部身份（SSO 配置在 `sso_config` / `ldap_config`）；
 > - iam 册另含 `position`、`employee`、`employee_sensitive`、`abac_policy`、`access_grant`、`auth_session`、`auth_refresh_token`、`login_attempt`、`data_scope_resource`、`field_permission`、`sod_rule_permission`、`sod_exemption`、`org_lifecycle_log`、`permission_snapshot`、`event_outbox`、`event_consume_record` 等表。

@@ -16,9 +16,9 @@ aliases:
 related:
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书]]"
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基]]"
-  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-platform]]"
-  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-iam]]"
-  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-audit]]"
+  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-3-platform]]"
+  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-4-iam]]"
+  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-5-audit]]"
   - "[[03-企业级一体化管理系统-e-aio-概要设计说明书]]"
 ---
 
@@ -110,6 +110,9 @@ related:
 | [[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基\|P0 册]] | 3.2 契约与幂等、3.6 Flyway、3.7 ArchUnit、3.8 CI、3.9 前端壳、4 common、6.1–6.3 |
 | [ADR-0001](../adr/0001-unified-post-and-always-200-result-contract.md) | 统一 POST + 恒 200；长任务 taskId + 轮询 |
 | [ADR-0002](../adr/0002-per-module-schema-and-flyway-instance.md) | 每模块独立 Schema + 独立 Flyway 实例 |
+| [ADR-0003](../adr/0003-protocol-endpoint-exceptions.md) | 协议端点例外（OAuth2/SAML2/文件流不套 `Result`） |
+| [ADR-0004](../adr/0004-cross-schema-readonly-predicate.md) | 跨 Schema 只读谓词例外（数据权限子树，封闭清单 + 三档降级） |
+| [ADR-0005](../adr/0005-platform-zero-dependency-org-context.md) | platform 零反向依赖：自有 `OrgContextPort` + 应用壳注入，环由结构消除 |
 | [api-conventions.md](../agents/api-conventions.md) 等 AGENTS 分册 | 接口动作词、错误码分段、五层分包、表约定 |
 
 ---
@@ -128,18 +131,18 @@ P0 交付的是"能跑的空壳 + 冻结契约"；P1 交付的是**所有后续�
 
 | 文件 | 承载 | 章节定位 | 状态 |
 |---|---|---|---|
-| `04-…-详细设计说明书-P1-批次总册.md` | 批次范围、里程碑、跨册裁决、质量门、登记表 | 本文件 | 编写完成，待评审 |
-| `04-…-详细设计说明书-P1-平台底座.md` | platform（顺序 3）+ iam（顺序 4）合并册，7 章齐全 | 第 3 章 platform、第 4 章 iam、第 5 章数据结构、第 6/7 章质量门与验收 | 编写完成，待评审 |
-| `04-…-详细设计说明书-P1-platform.md` | platform 单模块册（按能力域展开；**platform 侧 `api` 契约的权威来源**） | 第 2 章总体设计、第 3 章详细设计、第 4 章数据结构 | 编写中 |
-| `04-…-详细设计说明书-P1-iam.md` | iam 单模块册（**iam 侧 `api` 契约与错误码号的权威来源**） | 第 2 章总体设计、第 3 章详细设计、第 4 章数据结构 | 编写中 |
-| `04-…-详细设计说明书-P1-audit.md` | audit（顺序 5，M4–M6） | 全 7 章 | 编写中 |
+| `04-…-详细设计说明书-P1-1-批次总册.md` | 批次范围、里程碑、跨册裁决、质量门、登记表 | 本文件 | 编写完成，待评审 |
+| `04-…-详细设计说明书-P1-2-平台底座.md` | platform（顺序 3）+ iam（顺序 4）合并册，7 章齐全 | 第 3 章 platform、第 4 章 iam、第 5 章数据结构、第 6/7 章质量门与验收 | 编写完成，待评审 |
+| `04-…-详细设计说明书-P1-3-platform.md` | platform 单模块册（按能力域展开；**platform 侧 `api` 契约的权威来源**） | 第 2 章总体设计、第 3 章详细设计、第 4 章数据结构 | 编写中 |
+| `04-…-详细设计说明书-P1-4-iam.md` | iam 单模块册（**iam 侧 `api` 契约与错误码号的权威来源**） | 第 2 章总体设计、第 3 章详细设计、第 4 章数据结构 | 编写中 |
+| `04-…-详细设计说明书-P1-5-audit.md` | audit（顺序 5，M4–M6） | 全 7 章 | 编写中 |
 
 > **多册并存时的权威口径**（按顺序裁决，冲突即缺陷）：
 > 1. 模块 / Schema / 错误码**段** / 迁移目录 → 本册 6.1；
 > 2. 表名、统一列、索引与 DDL 约定 → 本册 3.5；
 > 3. 跨模块依赖方向与"环"的处理 → 本册 3.1；
-> 4. **各模块的 `api` 包接口与 DTO 名 → 该模块的单模块册**（platform → `…-P1-platform.md`；iam → `…-P1-iam.md`；audit → `…-P1-audit.md`）；合并册 `…-P1-平台底座.md` 保留模块定位、能力清单与数据结构，但其第 3/4 章接口签名**须与单模块册一致**，不一致以单模块册为准；
-> 5. **错误码具体号**：同段内以该模块单模块册的号表为唯一号源（iam 段 21000–21999 的具体号以 `…-P1-iam.md` 表 7-1 为准，其余文档出现同段内另一套号须改号或删除）。
+> 4. **各模块的 `api` 包接口与 DTO 名 → 该模块的单模块册**（platform → `…-P1-3-platform.md`；iam → `…-P1-4-iam.md`；audit → `…-P1-5-audit.md`）；合并册 `…-P1-2-平台底座.md` 保留模块定位、能力清单与数据结构，但其第 3/4 章接口签名**须与单模块册一致**，不一致以单模块册为准；
+> 5. **错误码具体号**：同段内以该模块单模块册的号表为唯一号源（iam 段 21000–21999 的具体号以 `…-P1-4-iam.md` 表 7-1 为准，其余文档出现同段内另一套号须改号或删除）。
 
 ### 2.3 里程碑口径
 
@@ -159,18 +162,19 @@ P0 交付的是"能跑的空壳 + 冻结契约"；P1 交付的是**所有后续�
 ```mermaid
 graph LR
   P0["P0 工程骨架 + common<br/>(已交付)"] --> PLAT["platform<br/>顺序 3 · M1–M3"]
-  P0 --> IAMC["iam api 契约<br/>(M1 冻结)"]
-  PLAT --> IAM["iam<br/>顺序 4 · M2–M5"]
-  IAMC -.TenantCtxProvider.<-> PLAT
+  P0 --> IAM["iam<br/>顺序 4 · M2–M5"]
+  PLAT --> IAM
   IAM --> AUD["audit<br/>顺序 5 · M4–M6"]
   PLAT --> AUD
   IAM --> WF["workflow + approval<br/>顺序 6 · M5–M8（不在本册）"]
   AUD --> WF
   PLAT --> WF
+  APP["e-aio-app（唯一装配方）"] -.注入 iam→OrgContextPort 适配器.-> PLAT
+  APP -.注入适配器.-> AUD
 ```
 
 - **链内串行、相邻重叠**（HLD 13.4）：platform → iam → audit 为链，前一模块 `api` 冻结后，后一模块即可开工实现。
-- **反向依赖禁止**：`platform` 不得依赖 `iam` / `audit` 的实现；`iam` 不得依赖 `audit` 的实现（audit 在 M4 才落地）。二者对上游只允许"经 `api` 包的可选依赖"（见 4.2 规则 4）。
+- **平台底座零反向依赖（本批次硬约束）**：`platform` **不依赖** `iam` / `audit`（连 `api` 包也不依赖，见 [ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)）；`iam` 不依赖 `audit` 实现。需要"当前组织上下文"时，platform 只声明**自有端口**（`OrgContextPort`），由应用壳注入 iam 适配器——装配边只存在于 `e-aio-app`，模块图因此**无环**（结构消除，不靠框架容忍）。
 - **模块载体**：每个模块一个 Maven 模块 `e-aio-<module>`，父 POM `backend/e-aio/pom.xml` 登记；`e-aio-app` 是唯一装配方与唯一 Modulith 应用（`CONTEXT.md`）。
 
 ### 2.5 M1–M5 工作分解与交接物
@@ -220,12 +224,14 @@ graph LR
 | 关系 | 形态 | 说明 |
 |---|---|---|
 | iam → platform | 编译期正常依赖 `com.eaio.platform.api` | iam 缺参数/字典/缓存/文件/任务则无法工作，属单向依赖 |
-| platform → iam | **仅经 `com.eaio.iam.api` 的可选依赖** | platform 需要"当前组织上下文"（参数分级、文件权限、任务按组织隔离）；`TenantCtxProvider` 接口定义在 `iam.api`，实现注入可选——**接口在上游模块、实现依赖由上上游提供**，环不成立 |
-| platform → audit | 仅经 `com.eaio.audit.api` 的可选依赖 | 文件上传/下载留痕、参数变更留痕走 audit；audit 未就绪时缺席降级（结构化日志 + 待办清理） |
-| iam → audit | 仅经 `com.eaio.audit.api` 的可选依赖 | 权限变更审计（`UserRoleChangedEvent` + `PermissionAuditApi`）；M4 前 audit 缺席 |
+| platform → iam | **不存在**（不依赖其任何包，含 `api`） | platform 需"当前组织"时用**自有端口 `OrgContextPort`**（`com.eaio.platform.api`，内部 Null 默认实现：只读系统级、系统上下文），由 `e-aio-app` 注入 iam 适配器（[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)）。显式传参优先：`ParamApi.get(key, orgId)` 这类签名把上下文责任交给知道上下文的一侧 |
+| platform → audit | 不存在（编译期零依赖） | 文件上传/下载、参数变更的留痕由 **audit 侧**采集（`AuditAspect` + 端口适配器），platform 只发领域事件；app 负责装配 |
+| iam → audit | 仅经 `com.eaio.audit.api` 的可选依赖 | 权限变更审计（`UserRoleChangedEvent` + `PermissionAuditApi`）；M4 前 audit 缺席时降级为结构化日志 + 待补队列 |
 | audit → iam / platform | 编译期正常依赖 `api` 包 | 审计需用户名/组织名展示（iam）与参数/文件/Excel/任务（platform） |
 
-> **为什么不用"事件完全解耦"回避环**：事件适合副作用（缓存失效、索引同步），不适合"取数"（展示用户名、生成文件、按组织取参数），把所有同步取数改事件会把强一致读变成最终一致读，代价更大（HLD 4.4 的强/最终一致分工）。因此本批次采用"接口归属上游 + 可选注入"而不是"全事件化"。
+> **为什么不用"事件完全解耦"回避环**：事件适合副作用（缓存失效、索引同步），不适合"取数"（展示用户名、生成文件、按组织取参数），把所有同步取数改事件会把强一致读变成最终一致读，代价更大（HLD 4.4 的强/最终一致分工）。因此本批次采用"**显式传参 + 模块自有端口 + 应用壳装配**"，而不是"全事件化"，也不是"让 platform 反向依赖上层模块"。
+>
+> **为什么"接口放上游 + 可选注入"也不够**：那仍然是 `platform → iam` 的编译期边，是否成环取决于框架对 `@ApplicationModule` 的容忍；把不变量押在框架行为上，等于把设计缺陷推迟到编码期（[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md) 背景）。
 
 ### 3.2 事件与异步
 
@@ -281,9 +287,9 @@ audit 的 HLD 队列区间是 M4–M6，本批次只覆盖 M4–M5。**M6 收口
 |---|---|---|
 | 1 | iam 错误码：合并册 `21100–21146` vs iam 单模块册 `21001–21092` | **以 iam 单模块册表 7-1 为唯一号源**（2.2 权威口径第 5 条）；合并册号表作废 |
 | 2 | `PermissionAuditApi` 归属 | 归 **`com.eaio.audit.api`**（audit 是 iam 权限变更的采集方，依赖方向 iam → audit.api 为可选依赖） |
-| 3 | 数据权限规模上限 | 三档：≤2000 内联 `IN`；≤20000 走 `EXISTS` 谓词（[ADR-0004](../adr/0004-cross-schema-readonly-predicate.md)）；超限恒假 + 明确错误码，不退化为全量 |
+| 3 | 数据权限规模上限 | 三档：≤2000 内联 `IN`；≤50000 走 `EXISTS` 谓词（[ADR-0004](../adr/0004-cross-schema-readonly-predicate.md)）；超限**停用该数据范围规则**（恒假 + 明确错误码 + WARN 告警），不退化为全量可见、也不硬拒绝业务请求 |
 | 4 | OAuth2/SAML2/文件流与"恒 200"冲突 | 按 [ADR-0003](../adr/0003-protocol-endpoint-exceptions.md) 开封闭例外清单，逐路径登记到 `api-conventions.md` |
-| 5 | `TenantCtx` 环的打破方式 | 主方案 = `platform` 以可选依赖注入 `com.eaio.iam.api.TenantCtxProvider`（本册 3.1）；备选 = `platform` 自有 `OrgContextPort` + iam 适配器。**待 M1 实跑 `ApplicationModules.verify()` 定案**——报环则切备选，不假设 Modulith 容忍该形态 |
+| 5 | `TenantCtx` 与"platform 需要当前组织"的环 | **已定案，不再需要实测定夺**：platform **零反向依赖**（连 `api` 都不依赖），用自有 `OrgContextPort`（Null 默认 = 系统上下文/只读系统级）+ 应用壳注入 iam 适配器；由 **A7 断言**在编译期保证边不存在（[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)） |
 | 6 | 审计写入不走 `event_outbox` | 接受：审计写入为 STRONG 同事务 / 本地有界队列 + 溢出文件，消费幂等靠 `event_uid` 派生键（audit 册 5.4/7.6 已说明）。发件箱仍适用于权限/组织/参数等核心事件（本册 3.2） |
 | 7 | FR-AUD-01"查操作"默认不采集 | 接受收窄：默认不采集读路径，以 `capture.read-paths` 白名单 + 敏感读取 STRONG 补偿（audit 册 3.1.3）。理由：容量放大十倍以上且举证价值低；**该收窄须在评审记录中留痕** |
 | 8 | `audit_login_log` 保留与 WORM 冲突 | M6 定案（归档不删 或 改按月分区 + 迁移角色分批删）；本批次不做删除动作，保留口径已在 audit 册 7.6 登记 |
@@ -317,6 +323,7 @@ audit 的 HLD 队列区间是 M4–M6，本批次只覆盖 M4–M5。**M6 收口
 | A4 | 装配例外收紧 | **收紧**（P0 册 3.7 注记 4） | `ASSEMBLY_EXCEPTIONS` 只保留应用壳自身装配所需项；业务模块之间不得引用彼此的装配包 | `iam` 引用 `platform.infrastructure` → 失败 |
 | A5 | `internal` 包不可跨模块引用 | **生效**（P0 册 3.7 注记 5） | P1 模块出现 `internal` 包后，跨模块引用必须被 `verify()` 拦下 | 业务模块引用 `iam.internal.*` → 失败 |
 | A6 | `api` 包签名约束 | **新增**（P1 起 `api` 被真实依赖） | `api` 包内类型只能引用 `java.*` / common 共享面 / 自身 `api`；不得引用本模块 `application`/`domain`/`infrastructure` | `api` 的 DTO 里出现 `domain` 实体 → 失败 |
+| A7 | **平台底座零反向依赖** | **新增**（[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)） | `com.eaio.platform` **不得引用 `com.eaio.iam` / `com.eaio.audit`（含其 `api` 包）**；需要组织上下文只能用自己的 `OrgContextPort` | `platform.application` import `iam.api.TenantCtxProvider` → 失败 |
 
 > **A1–A6 的作用**：3.1 的"环由接口归属打破"、6.1 的"四处同时改"在没有断言时都只是文档约定；有了 A1–A6，新增模块边界是否合规由 CI 判定，而不是由评审者的记性判定。
 >
@@ -479,7 +486,8 @@ HLD 13.3 的 P1 验收为四项：**母子公司权限 E2E**、**操作审计 WO
 | 版本 | 日期 | 主要修订 |
 |---|---|---|
 | V1.0 | 2026-09-20 | P1 批次总册初版：批次范围与 M1–M5 窗口、里程碑切分、跨册契约裁决（依赖环处理/事件可靠性/前端分工/审计窗口切分/安全底线）、质量门增量（A1–A6 架构断言、OWASP、契约漂移）、验收锚点按 HLD 13.3 分段承诺、P1 模块与 Schema 登记表、P0 册 6.3 分流与遗留登记 |
+| V1.1 | 2026-09-21 | ① 分册命名加子序号（`-P1-1-`…`-P1-5-`，与 DD 总册同步）；② 依赖裁决改定案：**platform 零反向依赖**，组织上下文用自有 `OrgContextPort` + 应用壳注入（[ADR-0005](../adr/0005-platform-zero-dependency-org-context.md)），新增 **A7 断言**，取消"待 M1 实测定环"；③ 数据权限上限 20000→**50000**，超限改"停用规则 + 告警"（[ADR-0004](../adr/0004-cross-schema-readonly-predicate.md)）；④ 新增 3.6 前端落地口径、3.5 增补触发器/枚举/DTO/迁移兼容性与回滚约定；⑤ 3.7 逐条记录本批次已裁决问题（iam 号源、`PermissionAuditApi` 归属、FR-AUD-01 读路径收窄、audit 不走发件箱、篇幅不压缩等） |
 
 ---
 
-*本册为 P1 批次入口；模块级设计见 [[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-platform|platform 分册]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-iam|iam 分册]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-audit|audit 分册]]。*
+*本册为 P1 批次入口；模块级设计见 [[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-3-platform|P1-3 · platform]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-4-iam|P1-4 · iam]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-5-audit|P1-5 · audit]]，platform+iam 合并册为 [[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座|P1-2 · 平台底座]]。*

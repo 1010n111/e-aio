@@ -20,7 +20,7 @@ aliases:
 related:
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书]]"
   - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基]]"
-  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座]]"
+  - "[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座]]"
   - "[[03-企业级一体化管理系统-e-aio-概要设计说明书]]"
   - "[[02-企业级一体化管理系统-e-aio-软件需求规格说明书]]"
 ---
@@ -30,7 +30,7 @@ related:
 > **项目名称**：企业级一体化管理系统（e-aio）
 > **项目定位**：通用能力大一统 + 业务逻辑按企业定制的企业级开源系统
 > **编制依据**：GB/T 8567-2006《计算机软件文档编制规范》、GB/T 9385-2008《计算机软件需求规格说明规范》
-> **上游文档**：[[01-企业级一体化管理系统-e-aio-可行性研究报告|01-可行性研究报告]]、[[02-企业级一体化管理系统-e-aio-软件需求规格说明书|02-软件需求规格说明书（SRS）]]、[[03-企业级一体化管理系统-e-aio-概要设计说明书|03-概要设计说明书（HLD）]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|04-DD 第 P0 册 · 工程地基]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座|04-DD P1 册 · 平台底座]]
+> **上游文档**：[[01-企业级一体化管理系统-e-aio-可行性研究报告|01-可行性研究报告]]、[[02-企业级一体化管理系统-e-aio-软件需求规格说明书|02-软件需求规格说明书（SRS）]]、[[03-企业级一体化管理系统-e-aio-概要设计说明书|03-概要设计说明书（HLD）]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|04-DD 第 P0 册 · 工程地基]]、[[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座|04-DD P1 册 · 平台底座]]
 > **版本**：V1.0（M4–M5 落地部分；M6 归档/告警收口段随下一段续编）
 > **日期**：2026-09-20
 > **分册归属**：本文档为详细设计说明书 **第 P1 册（分册三）· audit**，覆盖 HLD 13.2 开发队列 **顺序 5**（audit 双审计引擎，M4–M6）。
@@ -130,12 +130,12 @@ related:
 1. [[03-企业级一体化管理系统-e-aio-概要设计说明书|HLD]]：2.2.2 模块化单体边界、2.3 模块划分、2.4 模块间交互机制、3.2 内部模块接口、3.3 核心事件清单、4.1.4 审计域实体、4.3 数据存储分工、4.4 数据一致性策略、5.3 audit、6.3 定时任务设计、7.1/7.2 出错处理、8.4 审计安全、8.5 等保三级对照、11.1 依赖矩阵、11.2 核心事件清单、11.3 主要技术组件清单、12 待详细设计阶段细化事项第 4 条、13.2/13.3 开发队列与验收。
 2. [[02-企业级一体化管理系统-e-aio-软件需求规格说明书|SRS]]：C-07 双审计约束、2.2 角色（审计员/集团管理员/子公司管理员/财务人员）、3.2 FR-AUD-01…12、4.3 NFR-SEC-06/08、4.8 NFR-REL-02、6.1 数据分类分级、6.2 数据保留与归档。
 3. [[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|P0 册]]：3.1.3 命名空间与包结构、3.2.5 幂等键拦截、3.3 全局异常处理、3.4 日志与链路基础、3.6 Flyway 每模块独立实例、3.7 ArchUnit 质量门、6.1 模块登记表、6.3 待 P1 细化事项（第 2、5 条）。
-4. [[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座|P1 册 · 平台底座]]：2.4 链式契约先行冻结项、2.5 裁决表（C-1、C-7、C-13、C-19）、2.6 P0 遗留销账、3.3 platform 对外契约（`FileApi`/`ExcelApi`/`ParamApi`/`CacheApi`/`SchedulerApi`）、3.10 Excel 导出留痕、3.13 事件与投递口径、4.2–4.9 iam 契约（`UserApi`/`OrgApi`/`DataScopeApi`/`PermissionApi`/权限变更事件）、4.9 事件可靠性。
+4. [[04-企业级一体化管理系统-e-aio-详细设计说明书-P1-2-平台底座|P1 册 · 平台底座]]：2.4 链式契约先行冻结项、2.5 裁决表（C-1、C-7、C-13、C-19）、2.6 P0 遗留销账、3.3 platform 对外契约（`FileApi`/`ExcelApi`/`ParamApi`/`CacheApi`/`SchedulerApi`）、3.10 Excel 导出留痕、3.13 事件与投递口径、4.2–4.9 iam 契约（`UserApi`/`OrgApi`/`DataScopeApi`/`PermissionApi`/权限变更事件）、4.9 事件可靠性。
 5. [`ADR-0001`](adr/0001-unified-post-and-always-200-result-contract.md)（统一 POST + 恒 200）、[`ADR-0002`](adr/0002-per-module-schema-and-flyway-instance.md)（每模块 Schema + 独立 Flyway 实例）。
 6. [`docs/agents/`](agents/)：architecture / api-conventions / database / java-conventions / frontend-conventions / build-and-test / tech-stack（评审基准，冲突时优先级高于 03/02）。
 7. PostgreSQL 17 官方文档：`CREATE TABLE ... PARTITION BY RANGE`、`CREATE TRIGGER`、`pg_advisory_xact_lock`、`REVOKE`、`ALTER TABLE ... DETACH PARTITION`。
 
-> **同批次兄弟册说明**：本册编写时，仓库内 P1 段仅有 `04-…-P1-平台底座.md`（platform + iam 合册，M1–M5 段），**不存在**独立的 `04-…-P1-platform.md` 与 `04-…-P1-iam.md`。本册以该合册的第 3、4 章（含 2.4 冻结项与附录 7.4 交接清单）作为兄弟册契约对齐来源；若后续拆册，`FileApi`/`ExcelApi`/`OrgApi`/`UserApi`/`DataScopeApi` 的签名以拆册后的 `api` 为准，本册据此做**向后兼容**复核（见 7.6）。
+> **同批次兄弟册说明**：本册编写时，仓库内 P1 段仅有 `04-…-P1-2-平台底座.md`（platform + iam 合册，M1–M5 段），**不存在**独立的 `04-…-P1-3-platform.md` 与 `04-…-P1-4-iam.md`。本册以该合册的第 3、4 章（含 2.4 冻结项与附录 7.4 交接清单）作为兄弟册契约对齐来源；若后续拆册，`FileApi`/`ExcelApi`/`OrgApi`/`UserApi`/`DataScopeApi` 的签名以拆册后的 `api` 为准，本册据此做**向后兼容**复核（见 7.6）。
 
 ---
 
@@ -1350,7 +1350,7 @@ public interface AuditChainApi {
 |---|---|
 | 文件名 | `audit-proof-<chainKey>-<fromSeq>-<toSeq>-<yyyyMMddHHmmss>.jsonl`（+ `.sha256` 校验和文件） |
 | 格式 | JSONL（每行一条记录，便于流式校验与 grep） |
-| 首行 | `{"type":"PROOF_HEADER","chainKey":...,"fromSeq":...,"toSeq":...,"rowCount":...,"algo":"SHA-256","prevHashOfFirst":...,"rootHashOfLast":...,"generatedAt":...,"generatedBy":...,"generator":"e-aio/audit","spec":"DD-P1-audit-3.6.1"}` |
+| 首行 | `{"type":"PROOF_HEADER","chainKey":...,"fromSeq":...,"toSeq":...,"rowCount":...,"algo":"SHA-256","prevHashOfFirst":...,"rootHashOfLast":...,"generatedAt":...,"generatedBy":...,"generator":"e-aio/audit","spec":"DD-P1-5-audit-3.6.1"}` |
 | 每行 | `{"type":"ROW","chainSeq":...,"eventUid":...,"occurredAt":...,"prevHash":...,"rowHash":...,"canonicalJson":"<规范化 JSON 字符串>"}` —— **带 `canonicalJson` 是举证的关键**：第三方可以只用 `sha256(canonicalJson ‖ prevHash)` 复算，不需要我们的代码与数据库 |
 | 尾行 | `{"type":"PROOF_FOOTER","rootId":...,"computedAt":...,"verified":true,"rowCount":...,"fileSha256":"<前 N 行的 sha256>"}` |
 | 校验说明 | 随包附 `README-proof.md`（固定模板）：三步复算命令（`sha256sum` + `openssl dgst -sha256` 或 20 行 Python），**不依赖 e-aio** |

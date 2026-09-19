@@ -34,8 +34,22 @@
 | HTTP 状态码恒 200 | 所有响应 HTTP 状态码为 200，业务结果由 body 的 `code` 表达；认证/鉴权失败同样 200 + `10401`/`10403`（见 [ADR-0001](docs/adr/0001-unified-post-and-always-200-result-contract.md)） |
 | 错误码分段 | `0` 成功；`10000–19999` 通用段；`20000+` 业务段，**每模块预留 1000 号**（20000 platform、21000 iam、22000 audit，依此类推） |
 | 幂等键 | 写接口请求头 `Idempotency-Key`；重复提交返回 `10501`，**不重复执行业务、不回放历史结果**（`PROCESSING` 执行中被重放同属重复提交） |
-| 统一 POST + JSON | 全部接口（含查询/删除/导出）使用 POST + JSON body；动作词 `Get`/`GetPage`/`Add`/`Up`/`Del` + 业务动作词；文件上传/下载为唯一例外 |
+| 统一 POST + JSON | 全部接口（含查询/删除/导出）使用 POST + JSON body；动作词 `Get`/`GetPage`/`Add`/`Up`/`Del` + 业务动作词；**协议模式例外**（OAuth2/SAML2/文件流，封闭清单见 [ADR-0003](docs/adr/0003-protocol-endpoint-exceptions.md)）与文件上传/下载不套 `Result` |
 | traceId | 请求级链路标识：请求头 `X-Trace-Id` 透传或生成 → MDC → `Result.traceId` 回填 |
+
+## 平台底座（P1）
+
+| 术语 | 定义 |
+|---|---|
+| TenantCtx（租户/组织上下文） | 请求级的"当前用户 + 当前组织 + 数据范围 + 权限码"只读快照；**归 iam**（`com.eaio.iam.api`），platform/audit 只经 `TenantCtxProvider` 读取，**不放 common**（见 [ADR-0005](docs/adr/0005-platform-zero-dependency-org-context.md)） |
+| TenantCtxProvider | iam 暴露的只读接口：`current()` / `require()` / `currentOrgId()` / `runAs(...)`；唯一实现与 ThreadLocal 持有在 iam 内部 |
+| 组织上下文端口（OrgContextPort） | platform 自有的最小端口（当前组织 id / 系统上下文标记），默认 Null 实现；由应用壳注入 iam 适配器，**platform 不依赖 iam** |
+| 数据范围（data scope） | 角色的数据可见范围：`SELF` / `DEPT` / `DEPT_AND_SUB` / `ORG` / `ORG_AND_SUB` / `ALL` / `CUSTOM`；决定查询被追加的组织谓词 |
+| 权限码（permission code） | `模块:资源:动作` 形式的授权标识（如 `iam:user:list`）；后端判定用，前端仅用于渲染（不作为安全边界） |
+| 数据权限谓词 | 由 iam 拦截器追加到查询的组织过滤条件；三档：内联 `IN` / `EXISTS`（对 `eaio_iam.org_node_path` 的只读谓词，[ADR-0004](docs/adr/0004-cross-schema-readonly-predicate.md)）/ 规则停用（恒假 + 告警） |
+| 审计链（audit chain） | 审计表内按 `chain_key` 串接的哈希链：`row_hash = SHA-256(规范化 JSON ‖ prev_hash)`；改一行即校验不通过 |
+| WORM | 审计流水只追加：应用层无 UPDATE/DELETE + 数据库层 `REVOKE` + 触发器拒绝，保证"可举证" |
+| 发件箱（outbox） | 模块内 `event_outbox` 表 + 投递重试/死信：业务事务与事件登记同事务，跨模块副作用最终一致 |
 
 ## 数据
 

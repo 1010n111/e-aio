@@ -3,7 +3,7 @@
 - 状态：已接受
 - 日期：2026-09-20
 - 适用批次：P1（iam 数据权限），评审点见 04-DD P1 批次总册 3.1
-- 相关：[ADR-0002](0002-per-module-schema-and-flyway-instance.md)、`docs/agents/database.md`、`04-…-P1-iam.md` 3.9 / 7.6
+- 相关：[ADR-0002](0002-per-module-schema-and-flyway-instance.md)、`docs/agents/database.md`、`04-…-P1-4-iam.md` 3.9 / 7.6
 
 ## 背景
 
@@ -26,8 +26,10 @@ ADR-0002 冻结"模块只能访问自己的 Schema，禁止跨 Schema 关联查�
 3. **注入点唯一**：例外只能出现在 **iam 提供的 `DataPermissionInterceptor`**（`com.eaio.iam.infrastructure`）生成的 SQL 里。**业务模块不得手写跨 Schema 子查询**——业务侧只声明"本表哪个列是 org 维度"（`@DataScope(orgColumn = "...")`），谓词由拦截器生成。
 4. **降级与上限**：
    - 可见组织数 ≤ `inline-max`（默认 2000）→ 内联 `IN`/`= ANY(ARRAY[...])`（少一次子查询，命中率更高）；
-   - 2000 < 可见组织数 ≤ `exists-max`（默认 20000）→ 走 `EXISTS` 谓词；
-   - 超过 `exists-max` 或闭包表不可用 → **恒假谓词（`1=0`）+ 明确错误码**，绝不退化成"全量可见"。
+   - 2000 < 可见组织数 ≤ `exists-max`（默认 50000）→ 走 `EXISTS` 谓词（谓词成本与组织数无关，只有 `ancestor_id IN (...)` 的参数长度随上限增长）；
+   - 超过 `exists-max` 或闭包表不可用 → **停用该数据范围规则**：谓词取恒假（`1=0`）+ 明确错误码 + WARN 级告警（谁的范围、多少节点）。**不退化成全量可见**。
+   - **为什么是"停用"不是"拒绝"**：可见组织数超限是**规则形状问题**（给集团顶层管理员配了 `ORG_AND_SUB`），不是越权企图；在使用第一天就硬拒绝会直接阻塞业务。恒假 + 告警让问题立刻可见、可处置，且不泄漏数据。
+   - **为什么不做"物化可见组织快照"**：组织移动/角色变更要刷新全量快照，写入放大且易漂移；真到十万级组织时再按 ADR 修订引入，由 iam 统一维护，本批次不预留该复杂度。
 5. **可枚举与被测试**：架构测试断言"`eaio_iam.org_node_path` 只被 iam 的拦截器模块引用"；集成测试断言 ① 越权取数返回空而非报错/全量、② 注入的 SQL 命中索引（`EXPLAIN` 断言不含全表扫描）、③ 应用角色对例外表无写权限（`has_table_privilege` 为 false）。
 
 ## 被否决的备选

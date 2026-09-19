@@ -3,7 +3,7 @@
 - 状态：已接受
 - 日期：2026-09-20
 - 适用批次：P1 起（iam 认证、platform 文件下载）
-- 相关：[ADR-0001](0001-unified-post-and-always-200-result-contract.md)、`docs/agents/api-conventions.md`、04-DD P1 批次总册 3.5、`04-…-P1-iam.md` 7.6 L-2
+- 相关：[ADR-0001](0001-unified-post-and-always-200-result-contract.md)、`docs/agents/api-conventions.md`、04-DD P1 批次总册 3.5、`04-…-P1-4-iam.md` 7.6 L-2
 
 ## 背景
 
