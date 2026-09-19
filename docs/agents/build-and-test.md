@@ -18,6 +18,8 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL **17**�
 
 集成测试（`*IT`）走 Failsafe，与单测（`*Test`，Surefire）分开：`mvn -B test` 不会碰容器，`mvn -B verify` 才追加容器化集成测试。
 
+**已知噪音（不阻断，勿当失败）**：集成测试跑完后 Surefire 偶尔打印 `Surefire is going to kill self fork JVM. The exit has elapsed 30 seconds after System.exit(0).`。原因：platform 有多个 Redis 订阅容器（参数/字典/缓存的失效广播各一个），fork JVM 退出时按 Spring 关闭钩子逐个销毁，累计超过 30s 被 Surefire 强杀。**它不是断言失败**——`BUILD` 成败只由用例结果决定（实测同一次运行里用例全绿、构建绿，只是慢 30s）；关闭路径的优化登记在交付收口（T14）。
+
 ## 前端命令（在 `frontend/` 下执行）
 
 `npm install` / `npm run dev`（Vite 代理 → 后端）/ `npm run lint`（ESLint）/ `npm run build`。

@@ -70,11 +70,23 @@ class PlatformMigrationIT extends IntegrationTestBase {
         MigrationRunner.Outcome platform = migrationRunner.outcomes().get(0);
         assertThat(platform.module()).isEqualTo("platform");
         assertThat(platform.schema()).isEqualTo("eaio_platform");
-        assertThat(platform.migrationsExecuted()).as("空库首次启动至少执行全部版本化脚本")
-                .isGreaterThanOrEqualTo(latestVersionedScript());
-        // 期望值从迁移目录推导（不写死数字）：新增一票迁移时这里不必改，改了反而会漏
-        assertThat(platform.targetVersion()).as("目标版本应表示 %d", latestVersionedScript())
-                .matches(latestVersionedScript() + "(\\.0+)?");
+        // 共享库（IntegrationTestBase 的容器是 JVM 内单例）下**不能**断言"本上下文执行了 N 条"：
+        // 先跑的测试类可能已经让迁移落库（本上下文于是是 0 条，与产品行为无关）。要守的性质是
+        // "启动后没有待执行的脚本"，它等价于"版本化脚本（V*.sql）都已落库且成功"——期望值按迁移
+        // 目录推导，新增一票迁移时这里不必手改（手改反而会漏）。
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        Integer recorded = jdbc.queryForObject("select count(*) from eaio_platform.flyway_schema_history"
+                + " where type = 'SQL' and version is not null and success", Integer.class);
+        assertThat(recorded).as("启动后 V*.sql 都已执行落库且成功（pending = 0；条数按迁移目录推导）")
+                .isEqualTo((int) versionedScriptCount());
+        // 不能断言"本次运行的目标版本"：共享库下别的测试类已经迁移过，Flyway 无可迁移项时 target 为 null
+        // （与产品行为无关）。要守的性质是"库内已应用的最高版本 = 迁移目录里的最高脚本号"——它同时
+        // 覆盖"新脚本加了却没跑"（版本落后）与"跑了更早的脚本"（版本超前）两种坏情况。
+        // 版本列是 VARCHAR，用 cast 比较避免 '9' > '10' 的字典序坑。
+        Integer currentVersion = jdbc.queryForObject("select max(cast(version as integer))"
+                + " from eaio_platform.flyway_schema_history where type = 'SQL' and success", Integer.class);
+        assertThat(currentVersion).as("库内已应用的最高版本应等于迁移目录里的最高脚本号 %d", latestVersionedScript())
+                .isEqualTo(latestVersionedScript());
     }
 
     @Test
@@ -152,7 +164,17 @@ class PlatformMigrationIT extends IntegrationTestBase {
                 .toList();
     }
 
-    /** 迁移目录里的最高版本化脚本号（{@code V<n>__}），用于推导目标版本与"至少执行了几个脚本"。 */
+    /**
+     * 迁移目录里**版本化脚本（{@code V<n>__}）的条数**。
+     *
+     * <p>刻意与 {@link #latestVersionedScript()} 分开：**版本号 ≠ 条数**——编号允许跳号（本批次就有
+     * V1/V2/V3/V5，V4 属后续的文件中心票），拿"最高版本号"当条数会得到一个永远偏大的期望值。
+     */
+    private static long versionedScriptCount() throws IOException {
+        return migrationScriptNames().stream().filter(name -> name.startsWith("V")).count();
+    }
+
+    /** 迁移目录里的最高版本化脚本号（{@code V<n>__}），用于推导目标版本。 */
     private static int latestVersionedScript() throws IOException {
         Pattern pattern = Pattern.compile("^V(\\d+)__.*");
         return migrationScriptNames().stream()
