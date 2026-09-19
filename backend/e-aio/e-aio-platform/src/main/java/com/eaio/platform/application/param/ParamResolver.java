@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
+import com.eaio.platform.application.cache.CacheManager;
 import com.eaio.platform.domain.param.ParamContext;
 import com.eaio.platform.domain.param.ParamItem;
 import com.eaio.platform.domain.param.ParamLevel;
@@ -32,8 +33,12 @@ import org.springframework.stereotype.Component;
  *       代价是这类请求在 L1 未命中时多一次 DB 往返（参数表 200–2000 行、走
  *       {@code idx_param_level_owner}，DD 3.1.3 给的回源预算是 &lt;20ms）。</li>
  *   <li><b>未定义键不写空值占位</b>（3.1.5 原文）：参数键是有限集合（7.2 全表登记），不存在的键
- *       多半是代码拼错——把拼错的键缓存 60s 会把错误藏起来。</li>
+ *       多半是代码拼错——把拼错的键缓存 60s 会把错误藏起来（3.6.1 的 PARAM 区"空值占位 = 否"）。</li>
  * </ol>
+ *
+ * <p><b>T6 起 "无用户上下文"的冷读多了一层互斥重建</b>（3.6.2 防击穿）：L2 未命中时先抢 SETNX 锁
+ * （{@code l2.tryLock}），只有抢到的人回源，其余人在 1s 内轮询等这份缓存、超时直接回源。抢锁只发生在
+ * {@code userId == 0} 这条路径上——带用户上下文的请求不读 L2（见上），也就没有"击穿 L2"这回事。
  *
  * <p><b>跨实例失效广播</b>（Redis Pub/Sub {@code eaio:{env}:platform:ch:invalidation}）不在这里，但
  * "三件事"是配套的：本类的 {@link #invalidate(String)}/{@link #invalidateAll()} 负责清本机 L1 与 L2，
@@ -79,12 +84,31 @@ public class ParamResolver {
                 return Optional.of(hit);
             }
         }
+        boolean owner = false;
         if (context.userId() == 0L) {
             Optional<ParamItem> cached = l2.get(context.orgId(), key);
             if (cached.isPresent()) {
                 return Optional.of(cache(cacheKey, toResolved(cached.get())));
             }
+            owner = l2.tryLock(context.orgId(), key);
+            if (!owner) {
+                ParamItem rebuilt = l2.awaitValue(context.orgId(), key, CacheManager.LOCK_WAIT_MILLIS);
+                if (rebuilt != null) {
+                    return Optional.of(cache(cacheKey, toResolved(rebuilt)));
+                }
+            }
         }
+        try {
+            return load(key, context, cacheKey);
+        } finally {
+            if (owner) {
+                l2.unlock(context.orgId(), key);
+            }
+        }
+    }
+
+    /** 回源与回填（3.1.2 取值链的后半段）：DB → 生效值 → L2/L1；未定义键走 Spring 配置兜底。 */
+    private Optional<ResolvedParam> load(String key, ParamContext context, String cacheKey) {
         List<ParamItem> candidates = store.rowsByKey(key);
         Optional<ParamItem> effective = ParamOverlayResolver.effective(candidates, context);
         if (effective.isPresent()) {

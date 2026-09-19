@@ -16,17 +16,24 @@ import java.util.Optional;
 
 import com.eaio.common.redis.RedisKit;
 import com.eaio.common.redis.RedisUnavailableException;
+import com.eaio.platform.application.cache.CacheManager;
 import com.eaio.platform.domain.dict.DictItem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.Environment;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.mock.env.MockEnvironment;
 
 /**
  * 字典 L2 缓存的单测（P1 册 4.6 键表 + P1-2 册 3.15 配置登记表）。
  *
  * <p>钉住三件契约：键模式、TTL 抖动区间、Redis 不可用时"只降级不抛"。
+ *
+ * <p>T6 起字典 L2 是统一 {@link CacheManager} 的薄适配器，本类的断言一字未改，只是把构造参数从
+ * "RedisKit 的 provider"换成"<b>真实装配链上的 CacheManager</b>"——被 mock 的仍然只有 RedisKit，
+ * 于是"键怎么写、TTL 抖多少、失败怎么降级"依旧钉在真实实现上。
  */
 class DictL2CacheTest {
 
@@ -35,12 +42,15 @@ class DictL2CacheTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<RedisKit> provider = mock(ObjectProvider.class);
 
+    @SuppressWarnings("unchecked")
+    private final ObjectProvider<StringRedisTemplate> templates = mock(ObjectProvider.class);
+
     @Test
     @DisplayName("键 = eaio:{env}:platform:dict:items:{typeCode}（4.6 逐字）")
     void keyMatchesDesignTable() {
         given(provider.getIfAvailable()).willReturn(null);
 
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         assertThat(cache.keyOf("platform_param_level"))
                 .isEqualTo("eaio:it:platform:dict:items:platform_param_level");
@@ -50,7 +60,7 @@ class DictL2CacheTest {
     @DisplayName("写入 TTL = 1800s ± 10%（抖动的意义是防止整批同时过期）")
     void writeUsesJitteredTtl() {
         given(provider.getIfAvailable()).willReturn(kit);
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         cache.put("it_status", List.of(item("RUNNING")));
 
@@ -64,7 +74,7 @@ class DictL2CacheTest {
     void readDegradesToMiss() {
         given(provider.getIfAvailable()).willReturn(kit);
         given(kit.get(anyString(), any())).willThrow(new RedisUnavailableException("redis down"));
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         assertThat(cache.get("it_status")).isEmpty();
     }
@@ -73,7 +83,7 @@ class DictL2CacheTest {
     @DisplayName("没配 Redis：读=未命中、写/删=静默跳过（不抛、不假装成功）")
     void withoutRedisIsNoop() {
         given(provider.getIfAvailable()).willReturn(null);
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         assertThat(cache.get("it_status")).isEmpty();
         assertThatCode(() -> cache.put("it_status", List.of(item("RUNNING")))).doesNotThrowAnyException();
@@ -86,7 +96,7 @@ class DictL2CacheTest {
     void evictFailureIsSwallowed() {
         given(provider.getIfAvailable()).willReturn(kit);
         willThrow(new RedisUnavailableException("redis down")).given(kit).delete(anyString());
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         assertThatCode(() -> cache.evict("it_status")).doesNotThrowAnyException();
     }
@@ -96,12 +106,32 @@ class DictL2CacheTest {
     void payloadCarriesAllItems() {
         given(provider.getIfAvailable()).willReturn(kit);
         given(kit.get(anyString(), any())).willReturn(new DictL2Cache.Payload(List.of(item("OLD"))));
-        DictL2Cache cache = new DictL2Cache(provider, profileEnv("it"));
+        DictL2Cache cache = cache(profileEnv("it"));
 
         Optional<List<DictItem>> cached = cache.get("it_status");
 
         assertThat(cached).isPresent();
         assertThat(cached.get()).extracting(DictItem::getItemValue).containsExactly("OLD");
+    }
+
+    @Test
+    @DisplayName("写路径落到真 Redis 键上：适配器的 typeCode 经 CacheManager 拼成 4.6 的完整键")
+    void putRoutesToExactRedisKey() {
+        given(provider.getIfAvailable()).willReturn(kit);
+
+        cache(profileEnv("it")).put("it_status", List.of(item("RUNNING")));
+
+        ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
+        verify(kit).set(key.capture(), any(), any());
+        assertThat(key.getValue()).isEqualTo("eaio:it:platform:dict:items:it_status");
+        assertThat(cache(profileEnv("it")).keyOf("it_status")).isEqualTo(key.getValue());
+    }
+
+    /** 真实装配链（L1 + L2 + 广播 + CacheManager），只有 RedisKit 是 mock。 */
+    private DictL2Cache cache(Environment environment) {
+        RedisRegionCache l2 = new RedisRegionCache(provider, templates, environment);
+        CacheInvalidationPublisher publisher = new CacheInvalidationPublisher(templates, environment);
+        return new DictL2Cache(new CacheManager(new CaffeineRegionCache(environment), l2, publisher, environment));
     }
 
     private static MockEnvironment profileEnv(String profile) {

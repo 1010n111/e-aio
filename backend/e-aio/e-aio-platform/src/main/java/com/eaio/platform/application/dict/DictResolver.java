@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.eaio.common.exception.BusinessException;
 import com.eaio.platform.api.PlatformErrorCode;
+import com.eaio.platform.application.cache.CacheManager;
 import com.eaio.platform.domain.dict.DictItem;
 import com.eaio.platform.domain.dict.DictStatus;
 import com.eaio.platform.domain.dict.DictType;
@@ -28,8 +29,13 @@ import org.springframework.stereotype.Component;
  * {@code getItems} 不可见、但 {@code getLabel} 仍可解析。若按 3.2.3 流程图字面只缓存启用项，
  * 停用项的历史值就会在列表页退化成原始值——那正是 3.2.1"历史引用不断"要防的事。
  *
- * <p>类型不存在的处理是**抛 20003**（3.2.5：这是配置错误，必须显式暴露），不缓存空值：
- * 脏 typeCode 是代码拼错，缓存 60s 只会把错误藏起来；错误路径也不在热路径上。
+ * <p>类型不存在的处理是**抛 20003**（3.2.5：这是配置错误，必须显式暴露）。T3 当时不写空值占位，
+ * T6 按 3.6.1 的登记（DICT 区的"空值占位 = 是(60s)"）改成写占位：脏 typeCode 在占位期内不再反复打库，
+ * 但 20003 照抛——"藏起来"的是流量，不是错误。占位随 {@link #invalidate(String)} 一起被删，
+ * 所以类型重建后 refresh/改项就能立刻读到。
+ *
+ * <p><b>T6 起冷读多了一层互斥重建</b>（3.6.2 防击穿）：L1/L2/占位都未命中时先抢 SETNX 锁，
+ * 只有抢到的人回源，其余人在 1s 内轮询等这份缓存、超时直接回源（10 个并发只回源 1 次）。
  */
 @Component
 public class DictResolver {
@@ -67,8 +73,32 @@ public class DictResolver {
         if (cached.isPresent()) {
             return cacheL1(typeCode, cached.get());
         }
+        if (l2.isAbsent(typeCode)) {
+            // 3.6.2 防穿透：上一次回源已确认"类型不存在"，占位期内不再回源（脏 typeCode 不反复打库）
+            throw new BusinessException(PlatformErrorCode.DICT_TYPE_NOT_FOUND,
+                    "字典类型不存在（空值占位命中，3.6.1）：" + typeCode);
+        }
+        boolean owner = l2.tryLock(typeCode);
+        if (!owner) {
+            List<DictItem> rebuilt = l2.awaitValue(typeCode, CacheManager.LOCK_WAIT_MILLIS);
+            if (!rebuilt.isEmpty()) {
+                return cacheL1(typeCode, rebuilt);
+            }
+        }
+        try {
+            return load(typeCode);
+        } finally {
+            if (owner) {
+                l2.unlock(typeCode);
+            }
+        }
+    }
+
+    /** 回源与回填：类型存在性 → 全量项 → 写 L2 → 写 L1；类型不存在写空值占位并抛 20003。 */
+    private List<DictItem> load(String typeCode) {
         DictType type = store.rowByTypeCode(typeCode);
         if (type == null) {
+            l2.markAbsent(typeCode);
             throw new BusinessException(PlatformErrorCode.DICT_TYPE_NOT_FOUND, "字典类型不存在：" + typeCode);
         }
         List<DictItem> items = store.itemsByTypeCode(typeCode);
@@ -126,12 +156,10 @@ public class DictResolver {
         log.debug("字典缓存已失效：typeCode={}", typeCode);
     }
 
-    /** 全量失效：L1 清空 + 逐个类型删 L2（字典键是"一类型一键"，键集合就是类型集合）。 */
+    /** 全量失效：L1 清空 + L2 按区域前缀 SCAN 清（3.6.3：扫描而不是枚举类型清单，新增类型不会被漏掉）。 */
     public void invalidateAll() {
         l1.invalidateAll();
-        for (DictType type : store.allTypes()) {
-            l2.evict(type.getTypeCode());
-        }
+        l2.evictAll();
         log.info("字典缓存已全量失效（L1 + L2）");
     }
 

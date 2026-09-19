@@ -478,6 +478,8 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 | `eaio.joblog.retain-days` | 90 | 任务日志保留 |
 | `eaio.cache.local.enabled` | true | 本地一级缓存开关 |
 | `eaio.cache.redis.ttl-seconds` | 1800 | 二级缓存 TTL |
+| `eaio.cache.<region-kebab>.l2-ttl-seconds` | 见 P1-3 册 3.6.1 区域表 | 区域级 L2 TTL 覆盖（`param`/`dict`/`notify-template`/`file-meta`/`alert-rule`）；未设则退回 `eaio.cache.redis.ttl-seconds`，再退回区域登记值（实现注记见 P1-3 册 3.6.5 之后的《实现注记（T6）》） |
+| `eaio.cache.null-ttl-seconds` | 60 | 空值占位 TTL（防穿透；只对 P1-3 册 3.6.1 标"空值占位=是"的区域生效） |
 | `eaio.excel.atomic-max-rows` | 20000 | 整批事务上限（超过则分批，3.10） |
 | `eaio.excel.batch-rows` / `eaio.excel.max-export-rows` | 1000 / 1000000 | 分批大小 / 导出上限 |
 | `eaio.excel.thread-pool-size` / `queue-capacity` | 2 / 20 | 导入导出线程池（满了直接报 20022 语义"系统繁忙"，不无限排队） |
