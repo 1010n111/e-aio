@@ -67,16 +67,19 @@ class PlatformMigrationIT extends IntegrationTestBase {
                 "select installed_rank, version, description, type, script, success"
                         + " from eaio_platform.flyway_schema_history order by installed_rank");
 
-        assertThat(rows).as("P0 只有 V1 基线，历史表应恰好一条记录").hasSize(1);
-        Map<String, Object> row = rows.get(0);
-        assertThat(row.get("script")).isEqualTo("V1__baseline.sql");
-        assertThat(row.get("success")).isEqualTo(true);
-        // 版本号本身由 MigrationRunner 的结果断言（targetVersion）；历史表列形态随 Flyway 版本变化，
-        // 这里只在有值时校验语义，避免把"列可能为 null"当成迁移失败
-        Object version = row.get("version");
-        if (version != null) {
-            assertThat(version.toString()).matches("1(\\.0+)?");
-        }
+        // 历史表里有两类记录：建 Schema（type=SCHEMA，rank 0）与我们的基线脚本（type=SQL，rank 1）
+        List<Map<String, Object>> scripts = rows.stream()
+                .filter(row -> "SQL".equalsIgnoreCase(String.valueOf(row.get("type"))))
+                .toList();
+
+        assertThat(scripts).as("P0 只有一个版本化脚本（V1 基线）").hasSize(1);
+        Map<String, Object> baseline = scripts.get(0);
+        assertThat(baseline.get("script")).isEqualTo("V1__baseline.sql");
+        assertThat(baseline.get("success")).isEqualTo(true);
+        assertThat(String.valueOf(baseline.get("version"))).as("基线版本号表示 1").matches("1(\\.0+)?");
+
+        assertThat(rows).as("建 Schema 也会留痕（createSchemas=true 的直接证据）")
+                .anyMatch(row -> "SCHEMA".equalsIgnoreCase(String.valueOf(row.get("type"))));
     }
 
     @Test
