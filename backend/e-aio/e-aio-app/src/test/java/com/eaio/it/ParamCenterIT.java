@@ -170,6 +170,52 @@ class ParamCenterIT extends IntegrationTestBase {
         assertThat(withKey).contains("\"code\":0");
     }
 
+    @Test
+    @DisplayName("乐观锁：带过期 version 的改值被拒（复用通用数据冲突码 10003，不新造平台码）")
+    void staleVersionIsRejected() {
+        String key = "it.param.lock";
+        paramApiSwitchTo(9601L, 9602L);
+        paramApi.set(new ParamSaveCmd(key, "ORG", 9601L, "v1", "STRING", "it", null, null));
+        paramApi.set(new ParamSaveCmd(key, "ORG", 9601L, "v2", "STRING", "it", null, 0));
+
+        assertThatThrownBy(() -> paramApi.set(new ParamSaveCmd(key, "ORG", 9601L, "v3", "STRING", "it", null, 0)))
+                .as("version 已从 0 推到 1，再拿 0 来写必须被乐观锁拒绝而不是覆盖")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(10003));
+        assertThat(paramApi.getString(key, null)).isEqualTo("v2");
+    }
+
+    @Test
+    @DisplayName("留痕完整：HTTP 改值后历史行含旧值/新值/操作人/链路 ID（traceId 由入站链路回填）")
+    void changeLogRecordsOperatorAndTraceId() {
+        String key = "it.param.trace";
+        long orgId = 9701L;
+        long userId = 9702L;
+        paramApiSwitchTo(orgId, userId);
+        paramApi.set(new ParamSaveCmd(key, "ORG", orgId, "old", "STRING", "it", null, null));
+
+        RestClient client = RestClient.create("http://localhost:" + port);
+        String response = client.post()
+                .uri("/api/platform/param/Up")
+                .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"paramKey\":\"" + key + "\",\"paramLevel\":\"ORG\",\"ownerId\":" + orgId
+                        + ",\"paramValue\":\"new\",\"valueType\":\"STRING\",\"paramGroup\":\"it\",\"version\":0}")
+                .retrieve()
+                .body(String.class);
+        assertThat(response).contains("\"code\":0");
+
+        Map<String, Object> last = jdbc().queryForMap(
+                "select old_value, new_value, operator_id, trace_id from eaio_platform.param_change_log"
+                        + " where param_key = ? order by id desc limit 1", key);
+        assertThat(last)
+                .containsEntry("old_value", "old")
+                .containsEntry("new_value", "new");
+        assertThat(String.valueOf(last.get("operator_id"))).isEqualTo(String.valueOf(userId));
+        assertThat(last.get("trace_id")).as("链路 ID 由 TraceIdFilter 写入 MDC，留痕必须带上")
+                .isNotNull();
+    }
+
     private static void paramApiSwitchTo(long orgId, long userId) {
         OrgContextStub.CURRENT.set(new OrgContextPort.OrgContext(orgId, userId));
     }

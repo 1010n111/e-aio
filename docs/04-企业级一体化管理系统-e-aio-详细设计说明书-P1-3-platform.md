@@ -2412,7 +2412,7 @@ public interface NotifyTemplateApi {
 | L7 | 跨时区展示切换与报表按组织时区聚合 | P2（i18n/报表） |
 | L8 | Micrometer Tracing/OTel 桥接、Grafana 面板与 Prometheus 规则文件 | P2（可观测性专项） |
 | L9 | 信创数据库方言抽象（含 `jsonb` 替代） | P1 另册（P0 册 6.3 第 6 条） |
-| L10 | `application-local.yml` 的 datasource URL 固定会话时区——**M1 已落地**，写成 pgjdbc 有效形式 `?options=-c%20timezone%3DUTC`（`TimeZone=UTC` 会被 pgjdbc 静默忽略，等于没配）；P0 册 3.9.2 的 `src/utils/request.js` 措辞同步为实际路径 `src/api/request.js` | 余文档措辞（P1 收尾） |
+| L10 | `application-local.yml` 的 datasource URL 固定会话时区——**M1 已落地，但处方已更正（2026-09-19 实测）**：pgjdbc 42.7.5 + `pgvector/pgvector:pg17`（容器时区 Asia/Shanghai）下，`?options=-c%20timezone%3DUTC`、`?options=-c timezone=UTC`、`?TimeZone=UTC` 三种 URL 写法读到的会话时区**都是 Asia/Shanghai**（静默无效，配了等于没配）；有效做法是 Hikari 的 `connection-init-sql: SET TIME ZONE 'UTC'`（落在基础配置 `application.yml`，有数据源时逐连接生效），并由集成测试断言 `current_setting('timezone') = UTC` 守住。P0 册 3.9.2 的 `src/utils/request.js` 措辞同步为实际路径 `src/api/request.js` | 余文档措辞（P1 收尾） |
 
 **本册遗留的疑点（评审需裁决）**：
 
