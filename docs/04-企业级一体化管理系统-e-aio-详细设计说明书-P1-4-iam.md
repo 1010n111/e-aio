@@ -2442,7 +2442,7 @@ public interface TenantCtxProvider {
 | 约定 | 内容 |
 |---|---|
 | API 文件 | `src/api/iam/{auth,org,user,role,permission,dataScope,field,abac,sod,idp,session,contact,event}.js`，按动作词导出 `get/getPage/add/up/del` + 业务动作（`move/transition/assignRoles/mfaEnroll…`） |
-| 公司切换 | 顶栏切换器写 `X-Org-Id` 到请求头工厂（`src/utils/request.js` 的 header 钩子）；切换后清空依赖组织的本地缓存 |
+| 公司切换 | 顶栏切换器写 `X-Org-Id` 到请求头工厂（`src/api/request.js` 的 header 钩子）；切换后清空依赖组织的本地缓存 |
 | 幂等 | 写接口带 `Idempotency-Key`（`crypto.randomUUID()`）；**重试必须复用同键**；`10501` 提示"请勿重复提交"，`10502` 提示"稍后重试" |
 | 认证失败 | 按 `code`：`10401` → 清 token + 跳登录（并发请求只跳一次）；`10403`/`21031` → 提示；`21085` → 提示切换公司；**禁止按 HTTP 401/403** |
 | 权限指令 | `v-hasPermi="['iam:user:add']"`（RuoYi-Vue3 既有指令）；菜单与路由由 `MenuTree` 驱动，不硬编码 |

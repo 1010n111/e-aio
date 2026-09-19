@@ -564,7 +564,7 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 
 #### 3.9.2 统一请求封装（统一 POST + JSON）
 
-`src/utils/request.js`（axios 实例）按 HLD 2.6.4 约定实现：
+`frontend/src/api/request.js`（axios 实例）按 HLD 2.6.4 约定实现：
 
 ```js
 // 幂等键：由"用户动作"生成一次，重试复用同一键（Web Crypto，无第三方依赖）
