@@ -33,7 +33,7 @@ related:
 
 | 分册 | 覆盖开发队列（HLD 13.2） | 状态 | 文件 |
 |------|--------------------------|------|------|
-| 第 P0 册 · 工程地基 | 顺序 1 工程骨架 + 顺序 2 common | ✅ 已完成（V1.0） | [[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|第 P0 册 · 工程地基]] |
+| 第 P0 册 · 工程地基 | 顺序 1 工程骨架 + 顺序 2 common | 🔄 进行中（V1.1 审核修订） | [[04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基|第 P0 册 · 工程地基]] |
 | 第 P1 册 · 平台底座 | 顺序 3–9：platform、iam、audit、workflow+approval、mdm、oa、portal | ⏳ 待 P1 启动前编写 | （预留） |
 | 第 P2 册 · 业务闭环 | 顺序 10–20：report、project、finance、fund、inventory、crm、hr、scm、marketing、ai、service | ⏳ 待 P2 启动前编写 | （预留） |
 | 第 P3 册 · 平台化开放 | 顺序 21–24：integration、mobile、i18n、行业业务模块 | ⏳ 待 P3 启动前编写 | （预留） |
@@ -46,11 +46,11 @@ related:
 
 1. **命名空间**：模块根包 `com.eaio.<module>`，分包 `api / application / domain / infrastructure / events`；
 2. **契约核心**：`Result<T>` / `PageResult<T>` / `ErrorCode` / 全局异常处理在 common 冻结 V1，各册模块 API 均基于此；
-3. **数据库**：Flyway 多 Schema 迁移（每模块独立 Schema），迁移脚本命名与目录规范见 P0 册 3.6；
-4. **质量门**：ArchUnit 规则集 + `ApplicationModules.verify()` + CI 流水线，新增模块必须通过架构测试；
+3. **数据库**：每模块独立 Schema + **每模块独立 Flyway 实例**（P0 册 3.6），迁移脚本命名与目录规范同见该节；
+4. **质量门**：ArchUnit 规则集 + `ApplicationModules.verify()` + Lint + CI 流水线，新增模块必须通过架构测试；
 5. **技术选型**：开源优先（HLD 11.3 组件清单），业务模块禁止直接依赖第三方工具，一律经 common 门面；
 6. **前端对接**：统一 POST + JSON（动作词规约），文件上传/下载经 platform `FileApi`；
-7. **数据结构设计**：每册必须包含"数据结构设计"章节（Schema 规划、表结构 DDL、索引、迁移脚本与种子数据），数据库设计不单独成文档。
+7. **数据结构设计**：除 P0 册（无业务表，以 3.6 Flyway 迁移骨架替代）外，每册必须包含"数据结构设计"章节（Schema 规划、表结构 DDL、索引、迁移脚本与种子数据），数据库设计不单独成文档。
 
 ## 3. 验收对照
 

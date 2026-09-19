@@ -2,9 +2,9 @@
 title: 企业级一体化管理系统详细设计说明书 · 第 P0 册（工程地基）
 type: 详细设计说明书（DD）· 分册
 phase: 详细设计（P0）
-version: V1.0
+version: V1.1
 status: 进行中
-date: 2026-09-16
+date: 2026-09-19
 tags:
   - e-aio
   - DD
@@ -26,8 +26,8 @@ related:
 > **项目定位**：通用能力大一统 + 业务逻辑按企业定制的企业级开源系统
 > **编制依据**：GB/T 8567-2006《计算机软件文档编制规范》、GB/T 9385-2008《计算机软件需求规格说明规范》
 > **上游文档**：[[01-企业级一体化管理系统-e-aio-可行性研究报告|01-可行性研究报告]]、[[02-企业级一体化管理系统-e-aio-软件需求规格说明书|02-软件需求规格说明书（SRS）]]、[[03-企业级一体化管理系统-e-aio-概要设计说明书|03-概要设计说明书（HLD）]]
-> **版本**：V1.0（P0 阶段）
-> **日期**：2026-09-16
+> **版本**：V1.1（P0 阶段，审核修订）
+> **日期**：2026-09-19
 > **分册归属**：本文档为详细设计说明书 **第 P0 册 · 工程地基**（[[04-企业级一体化管理系统-e-aio-详细设计说明书|总册索引]]），覆盖 HLD 13.2 顺序 1 工程骨架 + 顺序 2 common；P1–P3 各分册将在对应开发批次启动前编写。
 
 ---
@@ -41,8 +41,8 @@ related:
 | 工程形态 | Maven 多模块 + Spring Boot 4.1.x + Spring Modulith 2.1.x；单一可执行 Jar |
 | 命名空间 | 模块根包 `com.eaio.<module>`，分包 `api/application/domain/infrastructure/events` |
 | 契约核心 | `Result<T>` / `PageResult<T>` / `ErrorCode` / 全局异常处理在 common 冻结 V1 |
-| 数据库 | Flyway 多 Schema 迁移骨架（每模块独立 Schema），P0 无业务表 |
-| 质量门 | ArchUnit 规则集 + `ApplicationModules.verify()` + CI 流水线（GitHub Actions） |
+| 数据库 | 每模块独立 Schema + **每模块独立 Flyway 实例**；P0 建 `eaio_platform` 骨架 Schema，无业务表 |
+| 质量门 | ArchUnit 规则集 + `ApplicationModules.verify()` + Lint（NFR-OSS-03）+ CI 流水线（GitHub Actions） |
 | 工具底座 | Hutool 门面 + Lombok + Bean Validation + MapStruct + ExcelKit（Apache Fesod）+ RedisKit |
 | 前端 | RuoYi-Vue3 蓝本（Vue3 + Vite + Element Plus），统一 POST + JSON 请求封装 |
 | P0 验收 | 与 HLD 13.3 对齐：工程骨架 CI 绿灯、ArchUnit 通过、Flyway 可运行；common 工具单测通过 |
@@ -101,7 +101,9 @@ P0 目标是搭建**可运行、可验证、可扩展**的工程地基，交付�
 | common 工具库 | ExcelKit / RedisKit / 通用工具门面 / 统一返回体 | 13.2 顺序 2 |
 | 前端骨架 | RuoYi-Vue3 蓝本初始化，统一请求封装 | 2.6.1 ruoyi-ui 映射 |
 | 架构测试 | ArchUnit 规则集 + Modulith verify | 10.1 |
-| CI 流水线 | GitHub Actions 编译/测试/架构/安全/构建 | 10.3 |
+| CI 流水线 | GitHub Actions 编译/Lint/测试/架构/集成/安全/构建（后端 + 前端独立 Job） | 10.3 |
+| 本地编排 | `docker-compose.yml` + `.env.example`（PostgreSQL/Redis 一键起本地依赖） | 9.2 |
+| 合规与配套 | 自身 `LICENSE`（Apache-2.0）、`NOTICE`（RuoYi MIT 版权声明与蓝本 tag/commit）、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、PR 模板、`Dockerfile` | 2.6.3 / 10.3 |
 
 ### 2.2 P0 工程结构总览（前后端分离）
 
@@ -111,24 +113,34 @@ P0 目标是搭建**可运行、可验证、可扩展**的工程地基，交付�
 e-aio/                                # 主仓库（backend + frontend + docs）
 ├── backend/                          # 后端工程根目录
 │   └── e-aio/                        # 后端工程（Spring Modulith 模块化单体，Maven 多模块，父 POM 所在）
-│       ├── pom.xml                   # 父 POM（依赖管理 BOM）
-│       ├── e-aio-app/                # 启动模块（Spring Boot 可执行 Jar）
-│       │   └── src/main/java/com/eaio/EaioApplication.java
+│       ├── pom.xml                   # 父 POM（依赖管理 BOM + 模块清单）
+│       ├── e-aio-app/                # 启动模块（Spring Boot 可执行 Jar；应用壳，非业务模块）
+│       │   ├── src/main/java/com/eaio/EaioApplication.java
+│       │   ├── src/main/java/com/eaio/app/       # Web 装配：全局异常/traceId/幂等过滤器/响应回填（3.3–3.4）
+│       │   ├── src/main/resources/db/migration/platform/V1__baseline.sql
+│       │   └── src/test/java/com/eaio/arch/      # ArchUnit + ApplicationModules.verify()
 │       ├── e-aio-common/             # common 技术底座（顺序 2）
-│       │   └── src/main/java/com/eaio/common/
-│       ├── e-aio-platform/           # 模块平铺于 backend/e-aio/ 下（P1 顺序 3 预留，父 POM 同步登记）
-│       └── …                         # P1–P3 按队列顺序新增 e-aio-<module>
+│       │   ├── src/main/java/com/eaio/common/
+│       │   └── src/test/java/com/eaio/common/    # common 自身约束测试
+│       └── …                         # P1–P3 按队列顺序新增 e-aio-<module>（P0 不预建目录）
 ├── frontend/                         # 前端独立工程（RuoYi-Vue3 蓝本，前后端分离）
 │   ├── src/…                         # 见 3.1.4
 │   ├── vite.config.js                # 开发代理 → 后端 API；生产独立部署
 │   └── package.json                  # 独立依赖与构建脚本（与后端 Maven 无关）
 ├── docs/                             # 工程文档
 ├── .github/workflows/ci.yml          # CI 流水线（后端/前端独立 Job，见 3.8）
+├── .github/PULL_REQUEST_TEMPLATE.md  # PR 模板（3.8 配套）
+├── docker-compose.yml                # 本地 PostgreSQL/Redis 编排（见 docs/agents/build-and-test.md）
+├── .env.example                      # 本地环境变量样例（不含真实密钥）
+├── Dockerfile                        # 应用镜像（多阶段构建，3.8 阶段 7）
+├── LICENSE                           # e-aio 自身 Apache-2.0
+├── NOTICE                            # 第三方组件许可与 RuoYi MIT 版权声明、蓝本 tag/commit
+├── CONTRIBUTING.md / CODE_OF_CONDUCT.md
 ├── .gitignore
 └── README.md
 ```
 
-> **命名说明**：Maven artifactId 前缀 `e-aio-`，模块根包统一 `com.eaio.<module>`。**P0 只创建 `backend/e-aio/e-aio-app` 与 `backend/e-aio/e-aio-common`**，业务模块目录在 P1 启动时按顺序新增，父 POM 模块清单同步维护。
+> **命名说明**：Maven artifactId 前缀 `e-aio-`，业务模块根包统一 `com.eaio.<module>`；`e-aio-app` 为**应用壳**（非业务模块）——启动类置于根包 `com.eaio`，Web 装配类置于 `com.eaio.app.*`（3.1.3）。**P0 只创建 `backend/e-aio/e-aio-app` 与 `backend/e-aio/e-aio-common`**（父 POM `<modules>` 仅此两项）；业务模块目录**不预建**，P1 启动时按队列顺序新增并同步父 POM。
 >
 > **前端工程边界**：`frontend/` 为独立 npm 工程（不参与 Maven 构建），独立版本管理；如需独立仓库协作，可将 `frontend/` 整体拆分为 `e-aio-web` 仓库（与 RuoYi-Vue3 独立前端仓库一致），后端仅依赖其 API 契约。
 
@@ -136,7 +148,7 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 
 - **契约先行**：common 对外 API（`Result<T>`、`ErrorCode`、工具门面、ExcelKit、RedisKit）在 P0 冻结 V1，P1 起所有模块基于此开发；API 变更走评审（HLD 13.4）。
 - **骨架复用**：工程骨架的包结构、异常处理、ArchUnit 规则、CI 流水线被所有后续模块直接复用，P0 阶段将"模板化"——新增模块 = 复制骨架模板 + 注册 Schema。
-- **无业务表**：P0 不建业务表；Flyway 仅在 `eaio_platform`（预留）之外维护**迁移元数据与 schema 创建脚本**，供 P1 各模块继承。
+- **无业务表**：P0 不建任何业务表；Flyway 在 P0 建立**迁移骨架与 `eaio_platform` 骨架 Schema**（供 P1 顺序 3 platform 直接继承），其余模块 Schema 由 P1 起在各自迁移脚本中声明创建（3.6）。
 - **数据库设计归属**：数据库设计不单独成文档，随各详细设计分册以"数据结构设计"章节承载；P0 无业务表，本册仅落地 Flyway 迁移骨架（3.6），P1 起各分册按模块给出表结构 DDL、索引与迁移脚本。
 
 ---
@@ -165,29 +177,32 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 | spring-boot-starter-web | Web 容器 | Apache-2.0 |
 | spring-boot-starter-validation | Bean Validation 标准 | Apache-2.0 |
 | spring-boot-starter-aop | 切面（审计/日志预留） | Apache-2.0 |
+| spring-boot-starter-security | 认证授权骨架（3.10 步骤 3 迁移 SecurityConfig；P1 抽离 iam） | Apache-2.0 |
+| jjwt（api/impl/jackson）或 Nimbus JOSE | JWT 令牌（HLD 11.3；P1 由 iam 承接） | Apache-2.0 |
+| spring-boot-starter-actuator | 健康检查 `/actuator/health`（3.10 步骤 3、5.3）；指标接 Prometheus 属 P1 | Apache-2.0 |
+| logstash-logback-encoder | 结构化 JSON 日志（3.4） | Apache-2.0 |
 | spring-modulith-starter-core | 模块化单体 | Apache-2.0 |
 | spring-modulith-starter-test | Modulith 测试 | Apache-2.0 |
 | lombok | 样板代码生成 | MIT |
 | hutool-all | 工具库底座 | MPL-2.0 |
 | mapstruct + mapstruct-processor | DTO 映射 | Apache-2.0 |
-| mybatis-plus-spring-boot3-starter | 持久层（P0 仅引入占位，P1 启用；Boot 4 对应 starter 版本 P1 落地时确认） | Apache-2.0 |
-| flyway-core + flyway-database-postgresql | 数据库迁移 | Apache-2.0 |
+| flyway-core + flyway-database-postgresql | 数据库迁移（每模块独立实例，3.6） | Apache-2.0 |
 | postgresql | JDBC 驱动 | PostgreSQL |
 | spring-boot-starter-data-redis | Redis 基础 | Apache-2.0 |
 | redisson-spring-boot-starter | 分布式锁 / 限流 / 队列（RedisKit 底层） | Apache-2.0 |
 | archunit-junit5 | 架构测试 | Apache-2.0 |
-| junit5 / assertj / testcontainers | 测试 | Apache-2.0 |
+| junit5（EPL-2.0） / assertj（Apache-2.0） / testcontainers（MIT） | 测试 | 见左 |
 | springdoc-openapi-starter-webmvc-ui | OpenAPI 3.x 文档 | Apache-2.0 |
-| fesod-core（Apache Fesod） | Excel 读写 | Apache-2.0 |
+| `org.apache.fesod:fesod-sheet`（Apache Fesod Incubating，2.0.x-incubating，JDK8–JDK25） | Excel 读写（经 `ExcelKit` 门面，4.3） | Apache-2.0 |
 | org.graalvm.buildtools:native-maven-plugin（native build tools） | GraalVM 原生镜像构建（可选 Profile，默认 JVM；P1 验证） | GPL-2.0 WITH Classpath-exception-2.0 |
 
 > **原生编译（GraalVM）**：Spring Boot 4.x 官方支持 AOT + native-image 将应用编译为原生可执行文件（秒级启动、低内存）；e-aio **默认 JVM 运行**，原生构建作为可选 Profile 提供。涉及反射/动态代理的组件（MyBatis-Plus、Flowable、Redisson、AOP 等）需补充 native 配置（reflect-config / proxy-config），P1 起随模块验证；Spring Modulith 官方支持原生运行。
 
-> **版本策略**：统一由父 POM 管理，锁定已知兼容组合；升级经 PR 评审并跑全量 CI。
+> **版本策略**：统一由父 POM 管理，锁定已知兼容组合；升级经 PR 评审并跑全量 CI。表内未标注范围者均为 compile 范围，`archunit-junit5` 与测试件为 test 范围；`spring-modulith-starter-test` 仅 test 范围。**MyBatis-Plus P0 不引入**（P0 无表可映射，避免无用的自动配置与启动风险），P1 顺序 3 再落地 Boot 4 对应坐标 `com.baomidou:mybatis-plus-spring-boot4-starter`（≥3.5.16，届时锁定版本）。**Redisson 须锁 4.x 并选配与 Boot 4 匹配的 `redisson-spring-data` 模块**（Boot 4 模块化后版本错配为静默失败）；**springdoc 须锁支持 Boot 4 的 3.x**。
 
 #### 3.1.3 命名空间与包结构规范
 
-模块根包：`com.eaio.<module>`（如 `com.eaio.common`、`com.eaio.platform`）。
+模块根包：`com.eaio.<module>`（如 `com.eaio.common`、`com.eaio.platform`）。`e-aio-app` 为**应用壳**而非业务模块：启动类 `EaioApplication` 置于根包 `com.eaio`，Web 装配类（`GlobalExceptionHandler` / `TraceIdFilter` / `IdempotencyFilter` / 响应回填 Advice / `ModuleFlywayConfig`）置于 `com.eaio.app.*`；业务代码不得放入 `com.eaio.app`。
 
 模块内部统一五层分包：
 
@@ -204,6 +219,18 @@ com.eaio.<module>
 - `internal` / `domain` / `infrastructure` 包不得被其他模块引用；
 - 跨模块仅可依赖 `api` 包；
 - `application` 层调用 `domain` 与 `infrastructure`（依赖倒置：domain 定义接口，infrastructure 实现）。
+
+**Modulith 可见性落点（P0 必须实现）**：Spring Modulith 默认只暴露模块**根包**类型，故每个模块的 `api` 子包必须显式声明为命名接口，否则 P1 首个业务模块接入时 `ApplicationModules.verify()` 必然失败：
+
+```java
+// backend/e-aio/e-aio-common/src/main/java/com/eaio/common/api/package-info.java
+@org.springframework.modulith.NamedInterface("api")
+package com.eaio.common.api;
+```
+
+- 每个模块的 `api` 包均需同款 `package-info.java`；跨模块只允许引用该命名接口内的类型；
+- 模块级依赖用模块根包 `package-info.java` 上的 `@ApplicationModule(allowedDependencies = {...})` 显式声明，固化"业务模块 → 通用能力、禁止反向、禁止循环"；
+- 业务类型不得放在模块根包（根包默认全可见，等于无边界）。
 
 #### 3.1.4 目录结构（前端 RuoYi-Vue3 初始化）
 
@@ -262,7 +289,7 @@ public class PageResult<T> {
     private long pageNum;      // 当前页
     private long pageSize;     // 页大小
     private List<T> records;   // 当前页数据
-    // 静态工厂 from(long total, List<T> records) 等省略
+    // 静态工厂 from(long pageNum, long pageSize, long total, List<T> records) 等省略
 }
 ```
 
@@ -323,11 +350,14 @@ public class IdempotentReplayException extends RuntimeException {
 
 | 要素 | 设计 |
 |------|------|
-| 拦截点 | `IdempotencyFilter`（OncePerRequestFilter，按 URL + `Idempotency-Key` 请求头） |
-| 存储 | Redis：键 `eaio:{env}:idem:{sha256(URL+key)}`，TTL 24h（可配） |
-| 流程 | 请求到达 → SETNX 占用 → 已存在则返回 `Result.fail(IDEMPOTENT_REPLAY)`（10501）→ 业务执行 → 成功/失败均保留占位（失败允许覆盖重试需业务配合） |
+| 归属 | `com.eaio.app.web.IdempotencyFilter`（OncePerRequestFilter，`e-aio-app` 装配；底层用 `RedisKit` 的 SETNX 能力） |
+| 拦截点 | 按 URL + `Idempotency-Key` 请求头（仅写接口，见"范围"） |
+| 存储 | Redis：键 `eaio:{env}:idem:{sha256(URL+key)}`；值为状态——`PROCESSING`（TTL 10min，防并发重入）/ `DONE`（TTL 24h，可配） |
+| 流程 | 请求到达 → SETNX 置 `PROCESSING` → 已存在则返回 `Result.fail(IDEMPOTENT_REPLAY)`（10501）→ 业务执行 → **成功**改写为 `DONE`（TTL 24h）；**业务失败/系统异常**立即删除占位，允许用户修正后重试（避免一次失败锁死 24h） |
 | 异常 | 幂等命中抛 `IdempotentReplayException`，由 3.3 全局异常处理统一返回 |
-| 范围 | 写接口强制、查询接口不启用；幂等键缺失时按普通请求放行并记录 WARN |
+| 范围 | 写接口（Add/Up/Del 及业务动作）强制、查询接口不启用；幂等键缺失时按普通请求放行并记录 WARN |
+
+> **与 HLD 7.2 的对齐**：HLD 7.2 原表述"返回原结果"与本册/`docs/agents/api-conventions.md`（幂等键约定，优先级最高）的"返回 `10501` 重复提交"冲突。已统一为**返回 10501、不重复执行业务、不回放历史结果**，HLD 7.2 同步修订；接口幂等由"键 + 唯一约束"兜底，不做结果缓存回放。
 
 ### 3.3 全局异常处理
 
@@ -336,20 +366,25 @@ public class IdempotentReplayException extends RuntimeException {
 | 异常类型 | 处理结果 | 日志 |
 |----------|----------|------|
 | `BusinessException` | `Result.fail(code, message)` | WARN（含 traceId） |
-| `MethodArgumentNotValidException` / `ConstraintViolationException` | `Result.fail(PARAM_INVALID, 首个错误消息)` | DEBUG |
+| `MethodArgumentNotValidException`（body 校验）/ `HandlerMethodValidationException`（方法参数校验，Boot 3.2+ 起的主路径）/ `BindException` / `ConstraintViolationException` | `Result.fail(PARAM_INVALID, 首个错误消息)` | DEBUG |
+| `HttpMessageNotReadableException`（JSON 报文不可读）/ `HttpRequestMethodNotSupportedException` | `Result.fail(PARAM_INVALID, "请求格式不正确")` | DEBUG |
+| `MissingServletRequestParameterException` / `MaxUploadSizeExceededException` | `Result.fail(PARAM_MISSING)`（上传超限用 `PARAM_INVALID`） | DEBUG |
 | `IdempotentReplayException` | `Result.fail(IDEMPOTENT_REPLAY)` | INFO |
 | `AccessDeniedException` | `Result.fail(FORBIDDEN)` | WARN |
 | 其他 `Exception` | `Result.fail(SYSTEM_ERROR)`（不泄漏堆栈） | ERROR（堆栈入库） |
 
 要点：
 - **不向客户端泄漏堆栈与敏感信息**（HLD 7.1）；
+- **参数/报文类异常必须先于兜底分支显式处理**：否则 JSON 解析失败、缺参、方法不支持等会落到 10500 系统错误，误导前端与运维排查；P0 单测须覆盖"JSON 解析失败"与"参数校验失败"两条路径。
 - 统一记录 `traceId`，异常日志与审计联动（P1 audit 接入后替换切面占位）；
 - 审计写入失败在强审计场景阻断（P1 实现，P0 预留扩展点）。
 
 ### 3.4 日志与链路基础
 
 - **结构化日志**：logback 配置输出 JSON（`{"ts","level","traceId","module","msg",...}`），生产环境 JSON、本地控制台 pattern。
-- **traceId 过滤器**：`TraceIdFilter`（OncePerRequestFilter）——从请求头 `X-Trace-Id` 读取或生成 UUID，写入 MDC；`Result.traceId` 自动回填。
+- **traceId 过滤器**：`TraceIdFilter`（OncePerRequestFilter，`com.eaio.app.web`）——从请求头 `X-Trace-Id` 读取或生成 UUID，写入 MDC，响应头回写同名 header，请求结束清理 MDC。
+- **`Result.traceId` 回填落点**：`GlobalResponseAdvice`（`ResponseBodyAdvice<Result<?>>`，`com.eaio.app.web`）在序列化前用 MDC 填充 `traceId`（为空才填）。`Result` 保持纯 POJO，自身不读 MDC（避免 common 依赖 Web 层）。
+- **日志配置**：`e-aio-app/src/main/resources/logback-spring.xml`——本地控制台 pattern，`dev/test/prod` 输出 JSON（经 `logstash-logback-encoder`，3.1.2）。
 - **日志级别规范**：业务操作 INFO、异常 WARN/ERROR、调试 DEBUG；禁止打印敏感字段（脱敏见 common `SensitiveUtils`）。
 
 ### 3.5 配置管理
@@ -373,9 +408,8 @@ spring:
     username: ${DB_USER:eaio}
     password: ${DB_PASSWORD:eaio}
   flyway:
-    enabled: true
-    locations: classpath:db/migration
-    # 多 Schema：按模块目录组织，各模块在启动时声明自己的 schema
+    enabled: false          # 关闭默认单实例迁移：由 ModuleFlywayConfig 按模块实例执行（见 3.6）
+    # 脚本目录 classpath:db/migration/<module>/，实例配置见 eaio.flyway.modules
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -384,7 +418,16 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 server:
   port: 8080
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info     # 健康检查 /actuator/health（3.10 步骤 3、5.3）
 eaio:
+  flyway:
+    modules:                     # 模块 → Schema 登记表；P1 起逐模块追加
+      - module: platform
+        schema: eaio_platform
   security:
     jwt:
       secret: ${JWT_SECRET:}
@@ -395,19 +438,25 @@ eaio:
 
 敏感配置（密码/密钥）一律走环境变量或密钥管理，禁止明文入库。
 
-### 3.6 Flyway 数据库迁移骨架
+### 3.6 Flyway 数据库迁移骨架（每模块独立实例）
+
+单一 Flyway 实例 + 多 Schema 会让全部模块共享一个版本号序列与一张历史表，破坏"模块可独立演进"（HLD 13.1），故采用**每模块一个 Flyway 实例**：
 
 | 约定 | 说明 |
 |------|------|
-| 脚本位置 | `classpath:db/migration`（按模块分包：`db/migration/eaio_platform/`、`db/migration/eaio_iam/`…） |
-| 命名规范 | `V<版本>__<描述>.sql`（如 `V1__init_schema.sql`）；重复执行用 `R__` |
-| Schema 管理 | 每个模块在 `application-{module}.yml` 声明 `spring.flyway.schemas=eaio_<module>`；启动时自动创建 schema 并执行迁移 |
-| P0 内容 | 不创建任何业务 Schema（各模块 Schema 由 P1 起在各自迁移脚本声明）；仅启用 Flyway 元表与骨架迁移基线 |
-| 种子数据 | P0 提供骨架种子（系统参数初值），业务种子（字典/角色/流程模板）在对应模块 P1 落地时由各自迁移脚本注入 |
+| 实例划分 | 每模块一个 `Flyway` Bean：`locations=classpath:db/migration/<module>`、`schemas=eaio_<module>`、在该 Schema 内建 `flyway_schema_history`；版本号在模块内独立递增 |
+| 关闭默认自动配置 | `spring.flyway.enabled=false`（3.5.2）；由 `ModuleFlywayConfig`（`com.eaio.app.config`）按 `eaio.flyway.modules` 登记表逐模块执行 `migrate()`，避免所有模块脚本被灌进默认 Schema |
+| 脚本位置 | 各模块自带 `src/main/resources/db/migration/<module>/`（[database.md](agents/database.md)）；单个可执行 Jar 内全部在 classpath，按实例 locations 隔离 |
+| 命名规范 | `V<版本>__<描述>.sql`（模块内递增）；可重复迁移 `R__<描述>.sql`（checksum 变化时重跑，仅用于视图/函数/种子） |
+| Schema 管理 | Flyway `create-schemas=true` 依据 `schemas` 自动创建 `eaio_<module>`；脚本内对象一律显式 schema 限定，**禁止跨 Schema DDL/查询**（[database.md](agents/database.md)） |
+| P0 内容 | 仅登记 `platform → eaio_platform`；脚本 `e-aio-app/src/main/resources/db/migration/platform/V1__baseline.sql`（基线占位，**不含任何业务表 DDL**）。其余模块 Schema 由 P1 起各自迁移脚本创建；platform 后续脚本自 `V2__` 连续编号 |
+| 种子数据 | P0 不注入业务种子（无表可写）；系统参数/字典/角色/流程模板等种子随 platform、iam 在 P1 各自迁移脚本注入 |
+
+> **被否决的备选**：单实例 + `schemas=eaio_platform,eaio_iam,…` + `default-schema`——配置最少，但版本号全局共享、脚本需靠 `search_path` 切换，模块无法独立演进，与 HLD 13.1"可插拔演进"冲突。
 
 ### 3.7 ArchUnit 质量门
 
-`ArchitectureTest`（`backend/e-aio/e-aio-app/src/test/java`）固化规则集：
+架构测试分两处固化规则：`ArchitectureTest`（`backend/e-aio/e-aio-app/src/test/java/com/eaio/arch`）承载模块边界与依赖方向；`CommonArchitectureTest`（`backend/e-aio/e-aio-common/src/test/java/com/eaio/common`）承载 common 自身约束（不依赖任何模块、不引用持久层类型）。规则集：
 
 | 规则 | 说明 |
 |------|------|
@@ -415,8 +464,8 @@ eaio:
 | 无循环依赖 | Modulith 自动校验 |
 | 分层依赖 | 业务模块 → 通用能力，禁止反向（`com.eaio.*` 依赖白名单/黑名单断言） |
 | 包访问 | `internal/domain/infrastructure` 不得被跨模块引用 |
-| 公共 API | 跨模块仅可依赖 `api` 包类型 |
-| 禁止跨 Schema SQL | 静态检查 + 代码评审（P0 先以规则约束，P1 引入 SQL 审计插件可选） |
+| 公共 API | 跨模块仅可依赖 `api` 包类型（该包以 `@NamedInterface` 显式暴露，见 3.1.3） |
+| 禁止跨 Schema SQL | P0 以代码评审 + 脚本人工核查约束（ArchUnit 不解析 SQL）；SQL 审计插件 P1 评估 |
 
 CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-03 PR 质量门）。
 
@@ -427,14 +476,15 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 | 阶段 | 步骤 | 失败即阻断 |
 |------|------|-----------|
 | 1 编译 | `mvn -B compile` | ✅ |
-| 2 单元测试 | `mvn -B test`（含 ArchUnit） | ✅ |
-| 3 架构测试 | `mvn -B verify -DskipITs`（Modulith verify） | ✅ |
-| 4 集成测试 | Testcontainers 起 PostgreSQL/Redis 跑 `@SpringBootTest` | ✅ |
-| 5 安全扫描 | 依赖漏洞（OWASP Dependency-Check）+ License 扫描 | ✅ |
-| 6 镜像构建 | Docker 多阶段构建，推送 GHCR | ⏸（PR 跳过，主分支执行） |
-| 7 发布 | 打 tag 时发布 Release | ⏸ |
+| 2 Lint | 后端 `mvn -B checkstyle:check`（规则集随 P0 冻结）；前端 `npm run lint`（ESLint） | ✅ |
+| 3 单元测试 | `mvn -B test`（含 ArchUnit） | ✅ |
+| 4 架构测试 | `mvn -B verify -DskipITs`（Modulith verify） | ✅ |
+| 5 集成测试 | Testcontainers 起 PostgreSQL/Redis 跑 `@SpringBootTest` + Flyway 空库迁移 | ✅ |
+| 6 安全扫描 | 依赖漏洞（OWASP Dependency-Check：NVD API Key 由仓库 Secrets 提供 + Actions 缓存，否则常态误红）+ License 扫描（NFR-OSS-04） | ✅ |
+| 7 镜像构建 | Docker 多阶段构建，推送 GHCR | ⏸（PR 跳过，主分支执行） |
+| 8 发布 | 打 tag 时发布 Release | ⏸ |
 
-配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、PR 模板（NFR-OSS-03/05）。
+配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`LICENSE`（Apache-2.0）、`NOTICE`（含 RuoYi MIT 声明与蓝本 tag/commit）、PR 模板（NFR-OSS-03/05）；本地依赖编排 `docker-compose.yml` + `.env.example`。
 
 ### 3.9 前端工程骨架（RuoYi-Vue3 蓝本）
 
@@ -447,6 +497,9 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 `src/utils/request.js`（axios 实例）按 HLD 2.6.4 约定实现：
 
 ```js
+// 幂等键：由"用户动作"生成一次，重试复用同一键（Web Crypto，无第三方依赖）
+export const newIdempotencyKey = () => crypto.randomUUID()
+
 // 统一 POST + JSON：所有接口（含查询/删除/导出）走 POST
 const request = (url, params = {}) => {
   const { __idempotencyKey, ...body } = params  // 幂等键从 body 剔除，仅作请求头
@@ -460,6 +513,8 @@ const request = (url, params = {}) => {
 
 // 响应拦截：Result<T> 统一解包；code!==0 提示并 reject；HTTP 401/403 跳登录
 ```
+
+> **幂等键生命周期（必须遵守）**：① 仅写接口生成，查询接口不生成；② 在"用户提交动作"发生时生成一次，同一动作的重试（网络重试、报错后重提）**必须复用同一键**，重新发起新业务动作才重新生成；③ 键只走请求头，不落 URL、不落本地存储。
 
 #### 3.9.3 API 动作词封装
 
@@ -495,19 +550,19 @@ export const customerApi = {
 
 | 步骤 | 动作 | 涉及内容 | 输出 / 验收 |
 |------|------|----------|-------------|
-| 0 | 准备：clone `RuoYi-Vue` 与 `RuoYi-Vue3` 至临时目录；确认 MIT LICENSE 保留 | 两个上游工程 | 改造基线版本号记录 |
+| 0 | 准备：clone `RuoYi-Vue` 与 `RuoYi-Vue3` 至临时目录；**锁定并记录 tag + commit hash**（跟随 master 漂移则基线不可复现）；确认 MIT LICENSE 保留 | 两个上游工程 | 基线记录（tag/commit 写入 `NOTICE` 与 PR 描述） |
 | 1 | 建立 e-aio 父 POM 骨架：`groupId=com.eaio`、`artifactId=e-aio`、`<modules>` 仅含 `e-aio-app`、`e-aio-common`；引入 3.1.2 依赖基线 | 在 `backend/e-aio/` 下新建 `pom.xml` | `mvn -B compile` 通过 |
 | 2 | 迁移 ruoyi-common → e-aio-common：全量拷贝工具类，包名 `com.ruoyi.common` → `com.eaio.common`；`AjaxResult`→`Result<T>`、`BaseEntity`→`PageResult<T>` 配套改造；删 RuoYi 私有业务常量 | ruoyi-common | 第 4 章工具门面清单落位 |
-| 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 iam 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/health` 可用 |
+| 3 | 迁移 ruoyi-framework 基础能力 → 工程骨架：`SecurityConfig`/JWT 工具暂入 `e-aio-app`（P1 抽离 iam 模块）；`WebConfig`/拦截器/全局异常 → 3.3 全局异常与 3.4 链路基础 | ruoyi-framework | 空应用可启动、`/actuator/health` 可用 |
 | 4 | ruoyi-system 拆分登记：用户/部门/岗位/角色/菜单/权限 → iam（P1）；字典/参数/公告 → platform（P1）；操作日志/登录日志 → audit（P1）。**P0 不搬入**，仅冻结契约 | ruoyi-system | 契约清单（6.3 待 P1 细化事项） |
 | 5 | ruoyi-quartz 保留为 platform Scheduler 蓝本（P1 迁移 Spring Task + ShedLock）；**P0 移出父 POM** | ruoyi-quartz | 父 POM 无 quartz |
 | 6 | ruoyi-generator → devtools：**P0 不搬入**，登记为 Vibe Coding 开发工具链（HLD 13.2.1） | ruoyi-generator | 运行时零残留 |
-| 7 | 建立 Modulith 命名空间与 ArchUnit：按 3.1.3 分包、3.7 规则集接入，`ApplicationModules.verify()` 纳入测试 | e-aio-app/e-aio-common | 架构测试 0 违例 |
+| 7 | 建立 Modulith 命名空间与 ArchUnit：按 3.1.3 分包（含各模块 `api` 包 `@NamedInterface`）与 3.7 规则集接入，`ApplicationModules.verify()` 纳入测试（app 与 common 各自测试） | e-aio-app（arch 测试）+ e-aio-common（common 约束测试） | 架构测试 0 违例 |
 | 8 | API 风格改造契约：全局统一 POST + JSON + 动作词（Get/Add/Up/Del/业务动作）；`springdoc` 标注 POST；幂等键头约定（3.2.5） | 全后端 | 3.9 前端封装按此对接 |
-| 9 | Flyway 迁移骨架接入：替换 RuoYi 的 SQL 脚本直连初始化方式（`sql/` 目录），改由 3.6 多 Schema 迁移管理 | 数据库初始化 | 空库迁移通过 |
+| 9 | Flyway 迁移骨架接入：替换 RuoYi 的 SQL 脚本直连初始化方式（`sql/` 目录），改由 3.6 每模块独立 Flyway 实例管理（P0 仅 `platform → eaio_platform` 基线） | 数据库初始化 | 空库迁移通过 |
 | 10 | CI 流水线：按 3.8 搭建 GitHub Actions（后端 Maven Job + 前端 npm Job 独立） | `.github/workflows/ci.yml` | PR 质量门全绿 |
-| 11 | 前端 RuoYi-Vue3 → `frontend/`：拷贝工程（工程名 `e-aio-web`）→ 按 3.9.2 统一 request 封装（POST + JSON）→ 移除 RuoYi 直连后端 baseURL，改 Vite 代理 → 清理 RuoYi 私有页面（P1 按模块重建 views） | RuoYi-Vue3 | `npm run build` 通过 |
-| 12 | 清理与合规收尾：父 POM 无 RuoYi 残留模块；删除 RuoYi 私有常量/表注释残留；保留 MIT LICENSE 与版权声明；README 与 CONTRIBUTING 就位 | 全工程 | 对照 5.2 P0 验收清单 |
+| 11 | 前端 RuoYi-Vue3 → `frontend/`：拷贝工程（工程名 `e-aio-web`）→ 按 3.9.2 统一 request 封装（POST + JSON + 幂等键）→ 移除 RuoYi 直连后端 baseURL，改 Vite 代理 → 清理 RuoYi 私有页面（P1 按模块重建 views）→ ESLint 接入 CI | RuoYi-Vue3 | `npm run build` 与 `npm run lint` 通过 |
+| 12 | 清理与合规收尾：父 POM 无 RuoYi 残留模块；删除 RuoYi 私有常量/表注释残留；**`LICENSE`（Apache-2.0）与 `NOTICE`（RuoYi-Vue/Vue3 MIT 版权声明 + 蓝本 tag/commit）就位**；README、CONTRIBUTING、CODE_OF_CONDUCT、PR 模板、`docker-compose.yml`/`.env.example`/`Dockerfile` 就位 | 全工程 | 对照 5.2 P0 验收清单 |
 
 #### 3.10.3 包名重写与文件级操作示例
 
@@ -545,9 +600,8 @@ com.eaio.common
 ├── json       # JsonUtils（Jackson 封装）
 ├── util       # 工具门面：DateUtils / StringUtils / CollectionUtils / BeanUtils / TreeUtils / SensitiveUtils / ConvertUtils
 ├── excel      # ExcelKit（Apache Fesod 封装）
-├── redis      # RedisKit（缓存/锁/限流/队列）
-├── validation # 自定义校验注解与约束
-└── mapper     # MapStruct 映射基类约定（无代码，规范说明）
+├── redis      # RedisKit（缓存 + 轻量队列）、DistributedLock、RateLimiter、RedisKeys
+└── validation # 自定义校验注解与约束
 ```
 
 **P0 冻结清单（契约 V1）**：附录 6.2 列出全部对外类（方法签名见第 4 章各小节）；P1 起新增 API 向后兼容。
@@ -564,7 +618,7 @@ com.eaio.common
 | `JsonUtils` | `toJson` / `fromJson` / `toMap` / `toList` | Jackson 封装，统一 ObjectMapper 配置（时区/空值策略） |
 | `BeanUtils` | `copy` / `toMap`（MapStruct 用于性能敏感场景，反射拷贝仅限低频） | Bean 拷贝 |
 | `TreeUtils` | `buildTree(list, rootId)` / `flatten(tree)` | 组织树/菜单树通用 |
-| `SensitiveUtils` | `mask(mobile/email/idCard/bankNo)` + `@Sensitive` 注解 | 脱敏（JSON 序列化时自动应用） |
+| `SensitiveUtils` | `mask(mobile/email/idCard/bankNo)`；同包提供 `@Sensitive`（`SensitiveType` 枚举）与 Jackson `SensitiveSerializer` | 脱敏（JSON 序列化时自动应用） |
 | `ConvertUtils` | `toLong` / `toInt` / `toBigDecimal` | 类型安全转换 |
 | `IdGenerator` | `nextId()`（雪花） / `nextStr()` | 全局唯一 ID（BIGINT 主键） |
 
@@ -595,9 +649,6 @@ public class ExcelKit {
 
     // 模板导出：预置表头/样式
     public static <T> void writeWithTemplate(OutputStream out, String templatePath, List<T> data);
-
-    // 异步导入任务：返回任务 ID（进度/结果经平台 Scheduler 查询，P1 落地调用方）
-    public static <T> String submitImport(InputStream in, Class<T> clazz, ImportCallback<T> callback);
 }
 
 /** 导入结果：含成功行 + 错误行定位 */
@@ -608,34 +659,28 @@ public class ImportResult<T> {
     private List<ExcelError> errors; // 行级错误（行号+列+消息）
 }
 
-/** 字段映射注解：@ExcelProperty(name="客户名称", index=0, required=true, validate=...) */
-public @interface ExcelProperty { String name(); int index() default -1; boolean required() default false; }
-
-/** 异步导入回调：进度上报 + 完成/失败通知（配合平台 Scheduler 异步任务） */
-public interface ImportCallback<T> {
-    void onProgress(ImportProgress progress);   // 行数进度
-    void onSuccess(ImportResult<T> result);     // 完成（含错误行）
-    void onError(Exception e);                  // 失败
-}
+/** 字段映射：直接复用 Fesod 注解 org.apache.fesod.sheet.annotation.ExcelProperty
+ *  （name/index/converter/required 等），e-aio 不自研同名单注解，避免同名歧义与迁移成本 */
 ```
 
 要点：
-- 字段映射用注解 `@ExcelProperty`（兼容 Fesod 注解体系），DTO 与导出模板解耦；
-- 大数据导出走流式（`SXSSF` 类），内存峰值可控（NFR-PERF-04）；
+- 字段映射直接复用 Fesod 的 `org.apache.fesod.sheet.annotation.ExcelProperty`（**不自研同名注解**），DTO 与导出模板解耦；
+- 大数据导出走流式（Fesod 流式写出），内存峰值可控（NFR-PERF-04）；
 - 导入错误逐行回显（行号 + 字段 + 原因），支撑前端批量修正；
+- **异步导入不属 P0 冻结范围**：其进度/结果查询依赖 platform 的 `FileApi`（文件持久化）与 Scheduler（任务调度），P0 只冻结同步读写与模板导出；异步 API 随 FR-PLT-05 在 P1 冻结，届时以"任务 ID + 进度查询接口"补齐（调用方为业务模块，实现落在 platform）。
 - 业务模块不直接依赖 Fesod，仅依赖 `ExcelKit`（门面隔离，未来可换实现）。
 
 ### 4.4 RedisKit
 
-**能力**：缓存读写、分布式锁、限流、轻量队列（HLD 5.1；支撑 FR-PLT-07、ShedLock 兼容）。
+**能力**：缓存读写、分布式锁、限流、轻量队列（HLD 5.1；支撑缓存管理 FR-PLT-06、定时任务分布式锁防重（ShedLock 兼容））。
 
 **对外 API（P0 冻结）**：
 
 ```java
 package com.eaio.common.redis;
 
-/** 缓存 */
-public class RedisCache {
+/** 缓存 + 轻量队列（唯一门面入口；命名避开 Spring Data `RedisCache` 同名冲突） */
+public class RedisKit {
     public void set(String key, Object value);                    // 默认 TTL
     public void set(String key, Object value, Duration ttl);
     public <T> T get(String key, Class<T> clazz);
@@ -643,6 +688,10 @@ public class RedisCache {
     public boolean expire(String key, Duration ttl);
     // 防穿透：空值缓存 setIfAbsent
     // 防击穿：互斥重建（配合 DistributedLock）
+
+    // 轻量队列（Redis List/Stream：发布/消费/死信；事务后投递在 AFTER_COMMIT 监听器内调用）
+    public void push(String queue, Object message);
+    public <T> T poll(String queue, Class<T> clazz, Duration timeout);
 }
 
 /** 分布式锁 */
@@ -657,19 +706,11 @@ public class RateLimiter {
     // 令牌桶（Redisson RRateLimiter）：key + 速率
     public boolean tryAcquire(String key, int permits);
 }
-
-/** 轻量队列 */
-public class QueueService {
-    // 基于 Redis List/Stream：发布/消费/死信
-    public void push(String queue, Object message);
-    public <T> T poll(String queue, Class<T> clazz, Duration timeout);
-    // 事务后投递（AFTER_COMMIT 事件监听器内调用）
-}
 ```
 
 **键规范**：`eaio:{env}:{biz}:{id}`，如 `eaio:prod:cache:crm:customer:1001`；统一在 `RedisKeys` 常量类登记，禁止散落字面量。
 
-**一致性**：缓存失效走事件（`MasterDataChangedEvent` 等，P1 落地）；`RedisCache` 提供显式失效方法供事件监听器调用。
+**一致性**：缓存失效走事件（`MasterDataChangedEvent` 等，P1 落地）；`RedisKit` 提供显式失效方法供事件监听器调用。
 
 ### 4.5 Lombok 接入规范
 
@@ -705,7 +746,7 @@ public class QueueService {
 | `SensitiveUtils` | 各类型脱敏规则、边界（空值/短串） | 100% |
 | `TreeUtils` | 构建/展平、环与孤儿节点处理 | ≥ 90% |
 | `ExcelKit` | 10 万行导出内存、导入错误定位、模板导出 | 集成测试覆盖 |
-| `RedisCache`/`DistributedLock` | 互斥重建、锁竞争、TTL | Testcontainers Redis |
+| `RedisKit` / `DistributedLock` / `RateLimiter` | 互斥重建、锁竞争、TTL、限流 | Testcontainers Redis |
 | `Result`/`ErrorCode` | 静态工厂、traceId 填充 | 100% |
 
 ---
@@ -719,7 +760,7 @@ public class QueueService {
 | 单元测试 | common 工具、异常、返回体 | JUnit 5 + AssertJ | 覆盖率 ≥ 80%（工具核心 100%） |
 | 架构测试 | Modulith 边界、依赖方向 | ArchUnit | 0 违例 |
 | 集成测试 | 应用启动、Flyway 迁移、Redis 连接 | Testcontainers + @SpringBootTest | 全绿 |
-| 契约测试 | `Result<T>`/`PageResult<T>` 序列化 | Spring Cloud Contract（可选） | 全绿 |
+| 契约测试 | `Result<T>`/`PageResult<T>` 序列化 + `traceId` 回填 | JUnit 5 + Jackson（P0）；Spring Cloud Contract 或等价方案 P1 评估（Boot 4 兼容性待验证） | 全绿 |
 
 ### 5.2 P0 验收清单（对照 HLD 13.3）
 
@@ -727,14 +768,16 @@ public class QueueService {
 |------------------|----------|
 | 工程骨架 CI 绿灯 | GitHub Actions 全阶段通过 |
 | ArchUnit 验证通过 | `ApplicationModules.verify()` + 自定义规则 0 违例 |
-| Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功，多 Schema 创建正确 |
+| Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功：`eaio_platform` 骨架 Schema 自动创建、`flyway_schema_history` 落位、`V1__baseline.sql` 版本 = 1（P0 无业务表；其余模块 Schema 由 P1 各自脚本创建） |
 | common 全部工具单测通过 | 第 4.8 节测试清单全绿，覆盖率达标 |
 
 ### 5.3 里程碑交付（对齐可研 7.1 阶段 0）
 
+> **归属说明**：可研阶段 0 覆盖 M0–M2（跨 P0 与 P1 启动），P0 只交付"Modulith 骨架 + 立项评审材料"；配置化定制 PoC 与 AI PoC 在阶段 0 内完成，P0 仅登记状态与预留接口，不计入 P0 验收（5.2）。
+
 | 交付 | 说明 |
 |------|------|
-| Modulith 骨架 | 可启动空应用 + 健康检查 `/health` |
+| Modulith 骨架 | 可启动空应用 + 健康检查（Actuator `/actuator/health`） |
 | 配置化定制 PoC | 由前端配置化渲染引擎 PoC 承载（P1 深化） |
 | AI PoC | AI 网关连通性验证（spring-ai 集成，P1 正式化） |
 | 立项评审材料 | 01–04 文档 + P0 演示 |
@@ -765,9 +808,9 @@ public class QueueService {
 | `com.eaio.common.exception` | `BusinessException`、`SystemException`、`IdempotentReplayException` | 异常类型 |
 | `com.eaio.common.id` | `IdGenerator` | 雪花 ID |
 | `com.eaio.common.json` | `JsonUtils` | Jackson 统一封装 |
-| `com.eaio.common.util` | `DateUtils/StringUtils/CollectionUtils/BeanUtils/TreeUtils/SensitiveUtils/ConvertUtils` | 工具门面 |
-| `com.eaio.common.excel` | `ExcelKit`、`ImportResult`、`ExcelError`、`ExcelProperty` | Excel 导入导出 |
-| `com.eaio.common.redis` | `RedisCache`、`DistributedLock`、`RateLimiter`、`QueueService`、`RedisKeys` | Redis 能力 |
+| `com.eaio.common.util` | `DateUtils/StringUtils/CollectionUtils/BeanUtils/TreeUtils/SensitiveUtils/ConvertUtils`；同包 `@Sensitive`（+`SensitiveType`/`SensitiveSerializer`） | 工具门面 + 脱敏注解 |
+| `com.eaio.common.excel` | `ExcelKit`、`ImportResult`、`ExcelError`、`ExcelReadOptions`、`ExcelWriteOptions` | Excel 导入导出（字段映射复用 Fesod `@ExcelProperty`，不另建同名类） |
+| `com.eaio.common.redis` | `RedisKit`、`DistributedLock`、`RateLimiter`、`RedisKeys` | Redis 能力 |
 | `com.eaio.common.validation` | `@EnumValid`、`@Mobile`、`@IdCard`、`@Money` | 自定义校验 |
 
 ### 6.3 待 P1 细化事项
@@ -781,4 +824,4 @@ public class QueueService {
 
 ---
 
-*本详细设计说明书为 V1.0（P0 阶段）草案，基于 01–03 文档编制；P1 起按 HLD 13.2 开发队列逐批次补充，并与上游文档保持可追溯性。*
+*本详细设计说明书为 V1.1（P0 阶段）审核修订版，基于 01–03 文档编制；P1 起按 HLD 13.2 开发队列逐批次补充，并与上游文档保持可追溯性。*

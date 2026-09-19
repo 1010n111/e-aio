@@ -476,7 +476,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 **核心设计**：
 
 - **Excel 工具（ExcelKit）**：基于 **Apache Fesod**（原 FastExcel / EasyExcel 生态，Apache 孵化，Apache-2.0）封装流式读写、样式、多 Sheet、大数据量导出（10 万 + 行）、导入解析与错误定位；为 platform 的 Excel 导入导出服务（FR-PLT-05）及全部业务模块提供底层能力。
-- **Redis 工具（RedisKit）**：RedisTemplate / Redisson 封装：缓存读写、分布式锁、限流器、轻量队列；支撑缓存管理（FR-PLT-07）与定时任务分布式锁防重（ShedLock 兼容）。
+- **Redis 工具（RedisKit）**：RedisTemplate / Redisson 封装：缓存读写、分布式锁、限流器、轻量队列；支撑缓存管理（FR-PLT-06）与定时任务分布式锁防重（ShedLock 兼容）。
 - **通用工具类**：以 **Hutool** 为基础工具库底座（字符串/日期/集合/IO/加密/树形等），在其上做薄封装形成 e-aio 统一工具门面（DateUtils、StringUtils、CollectionUtils、JsonUtils（Jackson）、BeanUtils、树形工具、脱敏工具、雪花 ID 生成器等），避免重复造轮子。
 - **Lombok**：编译期注解处理器（@Data / @Builder / @Slf4j / @RequiredArgsConstructor 等），简化 POJO 与日志样板代码，纳入统一代码规范（需 IDE 插件支持）。
 - **Bean Validation**：jakarta.validation + Hibernate Validator 标准参数校验（@NotNull / @Size / @Valid / 自定义约束），DTO 入参统一校验、校验错误码映射，全模块复用。
@@ -701,7 +701,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 |------|--------------|----------|
 | 业务校验失败 | 明确中文提示 + 错误码 | 回滚，记录审计（失败结果） |
 | 并发冲突（乐观锁） | "数据已被他人修改，请刷新后重试" | 返回新版本数据引导重试 |
-| 幂等重复提交 | "请求已提交，请勿重复操作" | 返回原结果 |
+| 幂等重复提交 | "请求已提交，请勿重复操作" | 返回 10501（重复提交），不重复执行业务、不回放历史结果 |
 | 外部依赖失败（AI/短信/签章） | 降级提示 | 重试队列 + 告警 |
 | 审计写入失败 | 阻断关键操作（财务/权限） | 强审计场景失败即拒绝 |
 
