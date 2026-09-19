@@ -1,12 +1,26 @@
 <template>
   <el-card shadow="never">
-    <template #header>参数管理（只读）</template>
+    <template #header>
+      <div class="param__header">
+        <span>参数管理</span>
+        <el-button
+          v-if="canAdd"
+          type="primary"
+          :disabled="loading"
+          @click="openAdd"
+        >
+          新增参数
+        </el-button>
+        <el-button
+          v-if="canRefresh"
+          :disabled="loading"
+          @click="handleRefreshAll"
+        >
+          刷新全部缓存
+        </el-button>
+      </div>
+    </template>
 
-    <!--
-      权限点：platform:param:list / :get（P1 册 7.3）。iam 未交付，故本页不自造
-      v-hasPermi、也不硬编码假权限数据，按钮一律不隐藏，权限先由后端 @PreAuthorize 兜底；
-      权限点由 iam 下发后接管（承接项见 P1 册 3.10.2 与 7.5 L1）。
-    -->
     <el-form
       inline
       :model="form"
@@ -199,6 +213,47 @@
           <el-tag :type="row.hotReload ? 'success' : 'info'">{{ row.hotReload ? '是' : '否' }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column
+        label="操作"
+        width="230"
+        fixed="right"
+      >
+        <template #default="{ row }">
+          <el-button
+            v-if="canUp"
+            link
+            type="primary"
+            @click="openEdit(row)"
+          >
+            编辑
+          </el-button>
+          <el-tooltip
+            v-if="canDel"
+            :disabled="!rowEditable(row).builtin"
+            content="平台内置参数不可删除（后端返回 20005）"
+            placement="top"
+          >
+            <span>
+              <el-button
+                link
+                type="danger"
+                :disabled="rowEditable(row).builtin"
+                @click="handleDelete(rowEditable(row))"
+              >
+                删除
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-button
+            v-if="canRefresh"
+            link
+            :disabled="!rowEditable(row).id"
+            @click="handleRefreshKey(row)"
+          >
+            刷新缓存
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <el-pagination
@@ -211,15 +266,167 @@
       layout="total, sizes, prev, pager, next"
       @change="loadPage"
     />
+
+    <el-dialog
+      v-model="editor.visible"
+      :title="editor.title"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        v-if="editor.encrypted"
+        class="param__dialog-alert"
+        type="warning"
+        :closable="false"
+        title="这是加密参数（value_type = SECRET）"
+        description="后端只下发 ******，前端拿不到明文。留空 = 保持原值不变（P1-2 册 331 行）；要换值就填新值。"
+      />
+      <el-alert
+        v-if="editor.hotReload === false"
+        class="param__dialog-alert"
+        type="info"
+        :closable="false"
+        title="该键不支持热更新：写入后需重启才生效"
+      />
+
+      <el-form
+        ref="editorFormRef"
+        :model="editor.form"
+        :rules="RULES"
+        label-width="96px"
+        @submit.prevent
+      >
+        <el-form-item
+          label="参数键"
+          prop="paramKey"
+        >
+          <el-input
+            v-model="editor.form.paramKey"
+            :disabled="editor.mode === 'up'"
+            maxlength="128"
+            show-word-limit
+            placeholder="如 platform.file.max-size"
+          />
+          <span
+            v-if="editor.mode === 'up'"
+            class="param__field-hint"
+          >键是行身份，(键, 级别, 归属) 不可改；改名请删了重建。</span>
+        </el-form-item>
+        <el-form-item
+          label="级别"
+          prop="paramLevel"
+        >
+          <el-select
+            v-model="editor.form.paramLevel"
+            class="param__level"
+          >
+            <el-option
+              v-for="level in PARAM_LEVELS"
+              :key="level"
+              :label="level"
+              :value="level"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="归属 ID">
+          <el-input-number
+            v-model="editor.form.ownerId"
+            :min="0"
+            :controls="false"
+            :disabled="editor.form.paramLevel === 'SYSTEM'"
+            class="param__owner"
+          />
+          <span class="param__field-hint">
+            {{
+              editor.form.paramLevel === 'SYSTEM'
+                ? 'SYSTEM 级固定 ownerId=0（否则后端 20006）'
+                : 'ORG 级填组织 ID、USER 级填用户 ID，必须大于 0'
+            }}
+          </span>
+        </el-form-item>
+        <el-form-item
+          label="值类型"
+          prop="valueType"
+        >
+          <el-select
+            v-model="editor.form.valueType"
+            class="param__type"
+          >
+            <el-option
+              v-for="type in PARAM_VALUE_TYPES"
+              :key="type"
+              :label="type"
+              :value="type"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          label="值"
+          prop="paramValue"
+        >
+          <el-input
+            v-model="editor.form.paramValue"
+            type="textarea"
+            :rows="3"
+            :placeholder="editor.encrypted ? '留空 = 保持原值不变' : ''"
+          />
+        </el-form-item>
+        <el-form-item label="分组">
+          <el-input
+            v-model="editor.form.paramGroup"
+            placeholder="可选"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="editor.form.remark"
+            maxlength="255"
+            show-word-limit
+            placeholder="可选"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button
+          :disabled="saving"
+          @click="editor.visible = false"
+        >
+          取消
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          @click="handleSave"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { FORBIDDEN_CODE } from '@/api/codes'
-import { PARAM_LEVELS, getAll, getPage } from '@/api/platform/param'
+import { newIdempotencyScope } from '@/api/idempotency'
+import {
+  PARAM_KEY_MAX_LENGTH,
+  PARAM_LEVELS,
+  PARAM_PERMISSIONS,
+  PARAM_VALUE_TYPES,
+  add,
+  del,
+  describeWriteFailure,
+  getAll,
+  getPage,
+  refresh,
+  toParamRow,
+  up,
+} from '@/api/platform/param'
+import { hasPermission } from '@/auth/permissions'
 
 /** 覆盖优先级 USER > ORG > SYSTEM（P1 册 3.1.1）；DTO 未冻结 candidates 顺序，故前端显式排。 */
 const LEVEL_RANK = { USER: 0, ORG: 1, SYSTEM: 2 }
@@ -227,11 +434,95 @@ const LEVEL_RANK = { USER: 0, ORG: 1, SYSTEM: 2 }
 /** 来源标签配色；DEFAULT/YAML/DB 是契约枚举（P1 册 5.3），不是文案。 */
 const SOURCE_TAG_TYPE = { DEFAULT: 'info', YAML: 'warning', DB: 'success' }
 
+/**
+ * 权限点驱动渲染（P1 册 7.3）。隐藏按钮**不是**安全边界：后端按 `Result.code` 判定，
+ * 这里只省一次注定被拒的往返；iam 未交付时权限未知 → 一律放行（见 `@/auth/permissions`）。
+ */
+const canAdd = computed(() => hasPermission(PARAM_PERMISSIONS.add))
+const canUp = computed(() => hasPermission(PARAM_PERMISSIONS.up))
+const canDel = computed(() => hasPermission(PARAM_PERMISSIONS.del))
+const canRefresh = computed(() => hasPermission(PARAM_PERMISSIONS.refresh))
+
 const form = reactive({ paramKey: '', paramLevel: null, ownerId: null, paramGroup: '' })
 const page = reactive({ pageNum: 1, pageSize: 20, total: 0 })
 const rows = ref([])
 const loading = ref(false)
 const allMode = ref(false)
+const saving = ref(false)
+
+const editorFormRef = ref(null)
+
+/** 编辑态：`mode` 取 `add`/`up`，`mode` 决定带不带 `version`（乐观锁）。 */
+const editor = reactive({
+  visible: false,
+  mode: 'add',
+  title: '新增参数',
+  encrypted: false,
+  hotReload: true,
+  row: null,
+  form: emptyEditorForm(),
+})
+
+/** 同一次提交的幂等键（重试复用、内容变了换新；见 `@/api/idempotency`）——只活在内存里。 */
+const submitKey = newIdempotencyScope()
+
+const RULES = {
+  paramKey: [
+    { required: true, message: '参数键必填', trigger: 'blur' },
+    { max: PARAM_KEY_MAX_LENGTH, message: `参数键不超过 ${PARAM_KEY_MAX_LENGTH} 字符`, trigger: 'blur' },
+  ],
+  paramLevel: [{ required: true, message: '级别必填', trigger: 'change' }],
+  valueType: [{ required: true, message: '值类型必填', trigger: 'change' }],
+  paramValue: [
+    {
+      validator: (_rule, value, callback) => {
+        // 前端只拦明显写错的值类型，省一次注定 20002 的往返；权威校验在后端 ParamValueCodec。
+        const text = String(value ?? '').trim()
+        if (text === '' || editor.form.valueType === 'STRING' || editor.form.valueType === 'SECRET') {
+          callback()
+          return
+        }
+        const bad =
+          (editor.form.valueType === 'INT' && !/^-?\d+$/.test(text)) ||
+          (editor.form.valueType === 'BOOL' && !/^(true|false)$/i.test(text)) ||
+          (editor.form.valueType === 'DECIMAL' && !/^-?\d+(\.\d+)?$/.test(text)) ||
+          (editor.form.valueType === 'JSON' && !isJson(text))
+        if (bad) {
+          callback(new Error(`值不是合法的 ${editor.form.valueType}`))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
+}
+
+function emptyEditorForm() {
+  return {
+    paramKey: '',
+    paramLevel: 'SYSTEM',
+    ownerId: 0,
+    paramValue: '',
+    valueType: 'STRING',
+    paramGroup: '',
+    remark: '',
+  }
+}
+
+function isJson(text) {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 列表行 → 编辑器行（含 `id`/`version`/`builtin`；无 DB 行时为 null，走 Add）。 */
+function rowEditable(row) {
+  return toParamRow(row)
+}
 
 function orderCandidates(candidates) {
   return [...(candidates ?? [])].sort(
@@ -290,6 +581,11 @@ async function loadGroupAll() {
   }
 }
 
+/** 写成功后按当前视图重取：不把用户切回另一种视图（allMode 决定走 GetPage 还是 GetAll）。 */
+function reload() {
+  return allMode.value ? loadGroupAll() : loadPage()
+}
+
 function handleQuery() {
   page.pageNum = 1
   loadPage()
@@ -304,18 +600,171 @@ function handleReset() {
   handleQuery()
 }
 
+function openAdd() {
+  editor.mode = 'add'
+  editor.title = '新增参数'
+  editor.row = null
+  editor.encrypted = false
+  editor.hotReload = true
+  editor.form = emptyEditorForm()
+  editor.visible = true
+}
+
+/** 编辑既有行：级别/归属决定 `Up` 定位到哪一行，`paramKey` 锁住（后端不支持改名）。 */
+function openEdit(row) {
+  const target = rowEditable(row)
+  editor.mode = target.version === null ? 'add' : 'up'
+  editor.title = editor.mode === 'up' ? `编辑参数：${target.paramKey}` : `新增参数：${target.paramKey}`
+  editor.row = target
+  editor.encrypted = target.encrypted
+  editor.hotReload = row?.hotReload !== false
+  editor.form = {
+    paramKey: target.paramKey ?? '',
+    paramLevel: target.paramLevel,
+    ownerId: target.ownerId,
+    paramValue: target.paramValue ?? '',
+    valueType: target.valueType,
+    paramGroup: target.paramGroup ?? '',
+    remark: target.remark ?? '',
+  }
+  editor.visible = true
+}
+
+/**
+ * 保存。失败时**保留对话框内容**供用户改后再提交：
+ * 幂等键按"载荷签名"复用——内容没变（重试）沿用旧键，内容变了就是一次新动作、换新键。
+ */
+async function handleSave() {
+  const valid = await editorFormRef.value?.validate().catch(() => false)
+  if (!valid) {
+    return
+  }
+  const payload = {
+    ...editor.form,
+    version: editor.mode === 'up' ? editor.row?.version : null,
+  }
+  const attempt = submitKey.next(payload)
+  saving.value = true
+  try {
+    if (editor.mode === 'up') {
+      await up(payload, { idempotencyKey: attempt.key })
+    } else {
+      await add(payload, { idempotencyKey: attempt.key })
+    }
+    // 成功后这次动作结束：下一次保存必须换新键（哪怕内容一模一样）
+    submitKey.reset()
+    editor.visible = false
+    ElMessage.success(editor.hotReload ? '保存成功（已热更新）' : '保存成功（该键需重启生效）')
+    await reload()
+  } catch (error) {
+    ElMessage.error(describeWriteFailure(error))
+  } finally {
+    saving.value = false
+  }
+}
+
+/** 删除：带 `{id, version}`（乐观锁），二次确认；内置参数按钮已禁用，这里再拦一道。 */
+async function handleDelete(target) {
+  if (!target?.id || target.builtin) {
+    ElMessage.warning('平台内置参数不可删除（后端返回 20005）')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认删除参数「${target.paramKey}」（${target.paramLevel} / ownerId=${target.ownerId}）？删除后该键回落到 YAML/默认值。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const attempt = submitKey.next({ id: target.id, version: target.version })
+  try {
+    await del(target.id, target.version, { idempotencyKey: attempt.key })
+    submitKey.reset()
+    ElMessage.success('删除成功')
+    await reload()
+  } catch (error) {
+    ElMessage.error(describeWriteFailure(error))
+  }
+}
+
+/** 行内刷新：只清该键的缓存（`Refresh {paramKey}`）。 */
+async function handleRefreshKey(row) {
+  const target = rowEditable(row)
+  if (!target.id) {
+    ElMessage.warning('该键没有数据库行，无需刷新（值来自 YAML 或默认值）')
+    return
+  }
+  const attempt = submitKey.next({ paramKey: target.paramKey })
+  try {
+    await refresh(target.paramKey, { idempotencyKey: attempt.key })
+    submitKey.reset()
+    ElMessage.success(`已刷新 ${target.paramKey} 的缓存`)
+    await reload()
+  } catch (error) {
+    ElMessage.error(describeWriteFailure(error))
+  }
+}
+
+/** 页头刷新：全量失效（DBA 绕过接口改库后的兜底），不传 paramKey。 */
+async function handleRefreshAll() {
+  try {
+    await ElMessageBox.confirm(
+      '确认清空并重载**全部**参数缓存？其他实例最长 60s（L1 TTL）后才看到新值。',
+      '刷新全部缓存',
+      { type: 'warning', confirmButtonText: '刷新', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const attempt = submitKey.next({})
+  try {
+    await refresh(undefined, { idempotencyKey: attempt.key })
+    submitKey.reset()
+    ElMessage.success('已刷新全部参数缓存')
+    await reload()
+  } catch (error) {
+    ElMessage.error(describeWriteFailure(error))
+  }
+}
+
 // 进页即查一次：空条件 = 看全部分页结果，不需要用户先点一次"查询"
 loadPage()
 </script>
 
 <style scoped>
+.param__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param__header > span {
+  flex: 1;
+}
+
 .param__level,
 .param__owner {
   width: 130px;
 }
 
+.param__type {
+  width: 160px;
+}
+
 .param__mode {
   margin-bottom: 12px;
+}
+
+.param__dialog-alert {
+  margin-bottom: 12px;
+}
+
+.param__field-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .param__candidates {
