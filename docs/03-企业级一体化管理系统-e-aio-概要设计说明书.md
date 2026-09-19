@@ -242,7 +242,7 @@ e-aio 采用**前后端分离**架构，基于 **RuoYi-Vue（前后端分离版�
 
 | RuoYi 模块 | RuoYi 功能 | e-aio Modulith 模块 | 改造要点 |
 |-----------|-----------|---------------------|----------|
-| ruoyi-common | 常量、AjaxResult/BaseEntity、核心工具、Redis 工具、安全工具、注解 | common | 工具下沉 common；注解与 AOP 基类归 platform |
+| ruoyi-common | 常量、AjaxResult/BaseEntity、核心工具、Redis 工具、安全工具、注解 | common | 工具下沉 common；业务 AOP 注解与切面基类归 platform；展示层脱敏注解 `@Sensitive` 随 `JsonUtils` 留 common（P0 册 4.2） |
 | ruoyi-framework | SecurityConfig、JWT、拦截器、AOP（操作日志/防重）、Web 配置 | iam + audit + platform | 认证授权归 iam；操作日志归 audit；拦截器/配置归 platform |
 | ruoyi-system | 用户主档（sys_user） | iam | 用户主档（账号/姓名/状态/多组织挂载）与密码凭证、登录策略（MFA/SSO）统一归 iam |
 | ruoyi-system | 角色 / 菜单 / 权限 | iam | 扩展母子公司多级组织权限（组织树/数据权限/SoD） |
@@ -849,7 +849,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | PostgreSQL + pgvector | 主库 / 向量 | PostgreSQL |
 | Redis | 缓存 / 会话 / 锁 | BSD-3 |
 | Lombok | 编译期样板代码生成（POJO / 日志） | MIT |
-| Hutool | Java 工具库底座（字符串/日期/集合/加密/Excel 等） | MPL-2.0 |
+| Hutool（`cn.hutool:hutool-all` 5.8.x；6.x 为 `org.dromara.hutool`） | Java 工具库底座（字符串/日期/集合/加密/Excel 等） | Mulan PSL v2（已核实 2026-09-19） |
 | Bean Validation（Hibernate Validator） | 参数校验标准 + 参考实现 | Apache-2.0 |
 | MapStruct | DTO / 实体映射（编译期） | Apache-2.0 |
 | MyBatis-Plus | 持久层（承接 RuoYi 蓝本） | Apache-2.0 |
@@ -864,13 +864,13 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | Quartz / ShedLock | 定时任务 / 分布式锁 | Apache-2.0 |
 | Prometheus / Grafana | 监控告警 | Apache-2.0 |
 | Spring AI / LangChain4j | AI 网关 / Agent | Apache-2.0 |
-| GraalVM Native Image（native-maven-plugin） | 原生编译（可选部署形态，默认 JVM；反射/代理组件需 native 配置） | GPL-2.0 WITH Classpath-exception-2.0 |
+| GraalVM Native Image（native-maven-plugin 1.1.x） | 原生编译（可选部署形态，默认 JVM；反射/代理组件需 native 配置） | UPL-1.0（已核实 2026-09-19，非 GPL-2.0+CE） |
 | MinIO | 对象存储 | AGPL-3.0（可换 S3 兼容替代） |
 | Flyway | 数据库迁移 | Apache-2.0 |
-| ArchUnit / Testcontainers | 架构测试 / 集成测试 | Apache-2.0 |
+| ArchUnit / Testcontainers | 架构测试 / 集成测试 | Apache-2.0 / MIT（已核实 2026-09-19） |
 | Maven / GitHub Actions | 构建 / CI | Apache-2.0 |
 
-> **许可证注意**：MinIO 为 AGPL-3.0，若企业介意可替换为 S3 兼容的开源实现（如 SeaweedFS、Ceph RGW，均 AGPL/Apache 可选）；整体选型以 Apache-2.0 友好为主，规避 GPL 传染性组件（NFR-OSS-02）；GraalVM Native 为可选构建工具（GPL-2.0 WITH Classpath-exception，产物不传染，默认 JVM 运行无需引入）。
+> **许可证注意**：MinIO 为 AGPL-3.0，若企业介意可替换为 S3 兼容的开源实现（如 SeaweedFS、Ceph RGW，均 AGPL/Apache 可选）；整体选型以 Apache-2.0 友好为主，规避 GPL 传染性组件（NFR-OSS-02）；GraalVM Native 为可选构建工具（native-maven-plugin 为 UPL-1.0 宽松许可，默认 JVM 运行无需引入）。选型许可证已于 2026-09-19 逐项核对 Maven Central POM（Hutool = Mulan PSL v2；ArchUnit = Apache-2.0；Testcontainers = MIT）。
 
 ---
 
