@@ -6,12 +6,27 @@
 
 **优先级**：本文件与 `docs/agents/*` 为评审基准；冲突时 AGENTS 系列 > `03 概要设计` > `02 需求规格` > `01 可研`。
 
+## Agent skills
+
+### Issue tracker
+
+Issue 与规格记在 GitHub Issues（`1010n111/e-aio`，用 `gh` CLI）。见 [issue-tracker.md](docs/agents/issue-tracker.md)。
+
+### Triage labels
+
+沿用默认 5 个标签：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。见 [triage-labels.md](docs/agents/triage-labels.md)。
+
+### Domain docs
+
+单 context 布局：仓库根 `CONTEXT.md` + `docs/adr/`。见 [domain.md](docs/agents/domain.md)。
+
 ## 每个任务
 
 1. **定批次**：目标模块属 P0/P1/P2/P3 哪一批（队列见 [docs-map.md](docs/agents/docs-map.md)）；不跨批次提前实现。
 2. **读批次分册**：当前 P0 → `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基.md`。
 3. **按索引查区域**，再写代码 + 测试。
 4. **提交前过门禁**（[build-and-test.md](docs/agents/build-and-test.md)），并对照索引文件逐条自查冻结项。
+5. **收尾提交**：本轮对话只要有代码或文档改动就提交一次（一个主题一次提交，格式见 [git-workflow.md](docs/agents/git-workflow.md)）；确无改动不产生空提交。
 
 ## 命令
 
