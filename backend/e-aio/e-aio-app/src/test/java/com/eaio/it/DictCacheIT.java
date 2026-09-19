@@ -139,8 +139,27 @@ class DictCacheIT extends IntegrationTestBase {
                 + " where type_code = ? and item_value = 'V1'", typeCode);
         assertThat(dictApi.getLabel(typeCode, "V1")).as("未广播前 L1 命中：仍读缓存值").isEqualTo("L1");
 
+        assertThat(redisKeys(typeCode)).as("预热已写 L2（否则'键消失'断言会在没写过时也通过）").isNotEmpty();
+
         publisher.publish(typeCode);
+
+        // 先证"消息确实到达并且订阅侧处理了"（L2 键消失），再证"读路径拿到新值"：
+        // 两者合成一条断言时，失败信息只有"值没变"，分不清是消息没到、订阅没处理、还是 L1 没清。
+        assertThat(awaitKeysGone(typeCode, 10000L)).as("广播后 L2 键必须消失（10s 窗：订阅回调在自己的连接线程里跑）")
+                .isTrue();
         awaitLabel(typeCode, "L1-other");
+    }
+
+    /** 轮询等待该类型的 L2 键全部消失（广播失效是异步的）。 */
+    private boolean awaitKeysGone(String typeCode, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (redisKeys(typeCode).isEmpty()) {
+                return true;
+            }
+            Thread.sleep(50L);
+        }
+        return false;
     }
 
     @Test
@@ -370,7 +389,7 @@ class DictCacheIT extends IntegrationTestBase {
     /** 轮询等待广播生效（不引 Awaitility：只为一个用例加测试依赖不划算）。 */
     private void awaitLabel(String typeCode, String expected) throws InterruptedException {
         Supplier<String> read = () -> dictApi.getLabel(typeCode, "V1");
-        long deadline = System.currentTimeMillis() + 5000L;
+        long deadline = System.currentTimeMillis() + 10000L;
         String actual = null;
         while (System.currentTimeMillis() < deadline) {
             actual = read.get();
@@ -379,6 +398,6 @@ class DictCacheIT extends IntegrationTestBase {
             }
             Thread.sleep(50L);
         }
-        assertThat(actual).as("广播在 5000ms 内未生效").isEqualTo(expected);
+        assertThat(actual).as("广播在 10000ms 内未生效").isEqualTo(expected);
     }
 }

@@ -190,11 +190,11 @@ public class ParamAppService {
             throw new BusinessException(PlatformErrorCode.PARAM_NOT_FOUND, "参数不存在：" + cmd.paramKey());
         }
         String oldValue = existing.getParamValue();
+        String oldType = existing.getValueType();
         long operator = contexts.current().userId();
         existing.setValueType(type.name());
         existing.setParamGroup(cmd.paramGroup() == null || cmd.paramGroup().isBlank() ? DEFAULT_GROUP : cmd.paramGroup());
         existing.setRemark(cmd.remark());
-        String oldType = existing.getValueType();
         boolean blankValue = cmd.paramValue() == null || cmd.paramValue().isBlank();
         if (blankValue && !type.name().equals(oldType)) {
             // 留空 = 不变更（P1-2 册 331）只在"类型不变"时成立：跨类型时旧值无法充当新类型的值

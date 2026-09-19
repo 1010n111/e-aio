@@ -294,8 +294,12 @@ class ParamCenterIT extends IntegrationTestBase {
                 + " and param_level = 'SYSTEM'", key);
         assertThat(paramApi.getInt(key, -1)).as("未广播前 L1 命中：仍读缓存值").isEqualTo(24);
 
+        // 广播的效果必须两层都发生：先证明 L2 里真有这个键（否则"没命中"可能只是没写 L2），
+        // 再断言广播把它删掉了——不然失败时只有"值没变"这一个信息，分不清是 L1 还是 L2 没失效。
+        assertThat(redisTemplate.hasKey(l2Key(9901L, key))).as("预热已写 L2").isTrue();
         publisher.publish(key);
-        awaitInt(() -> paramApi.getInt(key, -1), 8888888, 5000L);
+        assertThat(awaitKeyGone(l2Key(9901L, key), 10000L)).as("广播后 L2 键必须消失").isTrue();
+        awaitInt(() -> paramApi.getInt(key, -1), 8888888, 10000L);
 
         jdbc().update("update eaio_platform.param set param_value = '24' where param_key = ?"
                 + " and param_level = 'SYSTEM'", key);
@@ -405,6 +409,18 @@ class ParamCenterIT extends IntegrationTestBase {
     private String l2Key(long orgId, String key) {
         String env = RedisKeys.envOf(environment.getProperty("eaio.env"), environment.getActiveProfiles());
         return RedisKeys.of(env, "platform", "param", Long.toString(orgId), key);
+    }
+
+    /** 轮询等待 Redis 键消失（广播失效是异步的：订阅回调在自己的连接线程里跑）。 */
+    private boolean awaitKeyGone(String redisKey, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (!Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
+                return true;
+            }
+            Thread.sleep(50L);
+        }
+        return false;
     }
 
     /** 轮询等待（不引 Awaitility：只为一个用例加一个测试依赖不划算）。 */

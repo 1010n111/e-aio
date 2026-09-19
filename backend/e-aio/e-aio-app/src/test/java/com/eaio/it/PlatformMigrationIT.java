@@ -6,8 +6,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -110,18 +113,33 @@ class PlatformMigrationIT extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("平台 Schema 只含已交付能力的表 + Flyway 历史表（无越界建表）")
-    void schemaContainsOnlyParamTables() {
+    @DisplayName("平台 Schema 只含迁移脚本建出来的表 + Flyway 历史表（无越界建表）")
+    void schemaContainsOnlyParamTables() throws Exception {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
         List<String> tables = jdbc.queryForList(
                 "select table_name from information_schema.tables where table_schema = 'eaio_platform'",
                 String.class);
 
-        assertThat(tables).containsExactlyInAnyOrder("flyway_schema_history",
-                "param", "param_change_log",
-                "dict_type", "dict_item",
-                "job", "job_run", "shedlock");
+        // 期望值同样从迁移脚本推导（不写死清单）：既不会因为新增票的迁移而过期，也不依赖"哪张票先提交"
+        assertThat(tables).as("表清单 = 迁移脚本里的 CREATE TABLE + flyway_schema_history")
+                .containsExactlyInAnyOrderElementsOf(expectedTables());
+    }
+
+    /** 期望表集合：迁移脚本里的 {@code CREATE TABLE eaio_platform.<name>} + Flyway 历史表。 */
+    private static List<String> expectedTables() throws IOException {
+        Pattern createTable = Pattern.compile("CREATE TABLE\\s+eaio_platform\\.(\\w+)", Pattern.CASE_INSENSITIVE);
+        Set<String> tables = new TreeSet<>();
+        tables.add("flyway_schema_history");
+        for (Resource resource : new PathMatchingResourcePatternResolver()
+                .getResources("classpath*:db/migration/platform/*.sql")) {
+            String sql = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            Matcher matcher = createTable.matcher(sql);
+            while (matcher.find()) {
+                tables.add(matcher.group(1).toLowerCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(tables);
     }
 
     /** 迁移目录下的脚本文件名（`db/migration/platform/*.sql`）：脚本清单与目标版本的期望值都由它推导。 */
