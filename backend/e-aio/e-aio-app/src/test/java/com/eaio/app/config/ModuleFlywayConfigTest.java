@@ -9,6 +9,7 @@ import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.flyway.autoconfigure.FlywayMigrationInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -22,6 +23,7 @@ import org.springframework.jdbc.datasource.SimpleDriverDataSource;
  * <p>这里不连数据库：只验证"没有数据源就不注册迁移 Bean""登记为空要在启动时报出可读错误"。
  * 真实迁移（建 Schema、历史表落位、版本号=1）由 Testcontainers PostgreSQL 集成测试承担。
  */
+@ActiveProfiles("test")
 class ModuleFlywayConfigTest {
 
     /** 只提供一个未连接的数据源：足以让装配发生，但不会真的连库（迁移在触发器里才会连）。 */
@@ -126,3 +128,4 @@ class ModuleFlywayConfigTest {
         assertThat(new ModuleFlywayProperties(true, null).modules()).isEmpty();
     }
 }
+

@@ -2,6 +2,7 @@ package com.eaio;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.test.context.SpringBootTest;
 
 /**
@@ -14,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * 迁移的**可执行**验证由 Testcontainers PostgreSQL 集成测试承担（本机无 Docker 时跳过，权威在 CI）。
  */
 @SpringBootTest
+@ActiveProfiles("test")
 class EaioApplicationTest {
 
     @Test
@@ -22,3 +24,4 @@ class EaioApplicationTest {
         // 上下文加载失败即测试失败
     }
 }
+

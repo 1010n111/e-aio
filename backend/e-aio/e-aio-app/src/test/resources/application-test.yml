@@ -1,0 +1,19 @@
+# test profile：只给单元测试用（`@ActiveProfiles("test")`）。
+#
+# 为什么必须放在 profile 文档里、不能放 application.yml：
+#   放基础文档会被**所有**测试配置继承，集成测试（profile=it）也跟着"禁迁移"，
+#   于是"迁移没跑"这种失败会伪装成"迁移跑错了"——CI 首跑就是这么暴露的。
+#
+# 本 profile 的用途：不连数据库、不连 Redis。
+spring:
+  autoconfigure:
+    # classpath 上有 spring-jdbc（flyway starter 带入），Boot 会无条件建数据源，没有 URL 时启动失败
+    exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+server:
+  servlet:
+    # 生产用 /api 前缀（见主配置）；测试里保持空，便于直接按控制器映射发起请求
+    context-path: ""
+eaio:
+  flyway:
+    # 单测不需要迁移；迁移的可执行验证在集成测试（profile=it）与 CI 阶段 5
+    enabled: false

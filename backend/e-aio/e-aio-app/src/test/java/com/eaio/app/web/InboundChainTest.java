@@ -8,6 +8,7 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -21,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * 拆到独立模块（{@code spring-boot-webmvc-test-autoconfigure}），而本工程当前依赖面以 starter 为限；
  * 独立装配能显式列出本票真正要验证的四个组件，反而不依赖切片自动配置的隐式清单。
  */
+@ActiveProfiles("test")
 class InboundChainTest {
 
     private MockMvc mockMvc;
@@ -110,4 +112,5 @@ class InboundChainTest {
                 .andExpect(jsonPath("$.code").value(10000));
     }
 }
+
 
