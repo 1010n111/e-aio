@@ -1,0 +1,107 @@
+package com.eaio.it;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.List;
+
+import javax.sql.DataSource;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.client.RestClient;
+
+/**
+ * 集成测试（P0 册 3.8 阶段 5；AC："集成测试在 CI 上真实执行（非跳过）"）。
+ *
+ * <p>与单元测试的分工：这里验证**真实中间件**参与的那部分——迁移在真实 PostgreSQL 上跑、
+ * 幂等占位落在真实 Redis 上。这三件事在单测里无法证明（无 Docker 时本类整体跳过，权威验证在 CI）。
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class PlatformMigrationIT extends IntegrationTestBase {
+
+    @Autowired
+    private DataSource dataSource;
+
+    @LocalServerPort
+    private int port;
+
+    @Test
+    @DisplayName("空库迁移：平台 Schema 自动创建、历史表落位、基线版本为 1")
+    void migrationCreatesSchemaAndHistory() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+
+            // 历史表：Flyway 建在平台模块自己的 Schema 内（每模块独立实例，P0 册 3.6）
+            try (ResultSet columns = connection.getMetaData()
+                    .getTables(null, "eaio_platform", "flyway_schema_history", null)) {
+                assertThat(columns.next()).as("eaio_platform.flyway_schema_history 必须存在").isTrue();
+            }
+
+            // 基线版本 = 1，且没有失败记录
+            try (ResultSet rows = statement.executeQuery(
+                    "select version, success from eaio_platform.flyway_schema_history order by installed_rank")) {
+                assertThat(rows.next()).as("基线迁移必须留下一条记录").isTrue();
+                assertThat(rows.getString("version")).isEqualTo("1");
+                assertThat(rows.getBoolean("success")).isTrue();
+                assertThat(rows.next()).as("P0 只有 V1 基线，不应有第二条记录").isFalse();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("V1 基线不含业务表（P0 不做业务建模）")
+    void baselineHasNoBusinessTables() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+        List<String> tables = jdbc.queryForList(
+                "select table_name from information_schema.tables where table_schema = 'eaio_platform'",
+                String.class);
+
+        assertThat(tables).as("平台 Schema 里只应有 Flyway 历史表").containsExactly("flyway_schema_history");
+    }
+
+    @Test
+    @DisplayName("真实 HTTP + 真实 Redis：幂等键重放返回 10501，业务不再执行")
+    void idempotencyReplayOnRealRedis() {
+        RestClient client = RestClient.create("http://localhost:" + port);
+        String key = java.util.UUID.randomUUID().toString();
+
+        String first = post(client, key);
+        String second = post(client, key);
+
+        assertThat(first).contains("\"code\":0");
+        assertThat(second).contains("\"code\":10501");
+        // 重放不得执行业务：业务返回的雪花 ID 不应出现第二次的输出里（只有 error envelope）
+        assertThat(second).doesNotContain("\"id\"");
+    }
+
+    @Test
+    @DisplayName("健康检查可达（无额外依赖注入时也返回 UP）")
+    void actuatorHealthIsReachable() {
+        RestClient client = RestClient.create("http://localhost:" + port);
+
+        var response = client.get().uri("/actuator/health").retrieve().toEntity(String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
+        assertThat(response.getBody()).contains("UP");
+    }
+
+    private static String post(RestClient client, String idempotencyKey) {
+        return client.post()
+                .uri("/api/platform/demo/Echo")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"it\"}")
+                .retrieve()
+                .body(String.class);
+    }
+}

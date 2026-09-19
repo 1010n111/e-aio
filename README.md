@@ -148,29 +148,47 @@ e-aio/
 > 前后端分离架构：`backend/`（Spring Modulith 模块化单体，只出 RESTful API）+ `frontend/`（Vue3 独立工程，独立构建部署），详见 04-P0 分册 2.2。
 ---
 
-## 🚀 快速开始（规划）
+## 🚀 快速开始
 
-> 当前项目处于可研与立项阶段，源码工程尚未创建。以下为立项后的落地规划。
+> 当前处于 **P0 工程地基**阶段：骨架、契约、迁移、工具门面、入站链路与前端壳已就位；业务模块自 P1 起落地。
 
+### 有 Docker（推荐：连库 + 真跑迁移）
+
+```bash
+# 1. 克隆并进入仓库
+git clone https://github.com/1010n111/e-aio.git && cd e-aio
+
+# 2. 起本地依赖（PostgreSQL 17 + pgvector、Redis 7，与 CI 同镜像）
+cp .env.example .env
+docker compose up -d postgres redis
+docker compose ps            # 两个服务 healthy 后再继续
+
+# 3. 起后端（local profile：连库并执行每模块迁移）
+cd backend/e-aio
+mvn -B spring-boot:run -Dspring-boot.run.profiles=local
+# 健康检查：curl http://localhost:8080/api/actuator/health
+
+# 4. 起前端（另开终端）
+cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
-# 1. 克隆仓库
 
-git clone https://github.com/your-org/e-aio.git
+### 无 Docker（不需要任何外部依赖）
 
-cd e-aio
-
-# 2. 配置数据库（PostgreSQL + Redis）
-
-# 修改 application.yml 中的数据库连接
-
-# 3. 启动
-
-mvn spring-boot:run
-
-# 或 Docker 一键部署
-
-docker compose up -d
+```bash
+cd backend/e-aio
+mvn -B verify -DskipITs                        # 编译 + 单测 + 架构测试 + 许可证扫描
+cd e-aio-app && java -jar target/e-aio-app-*.jar --eaio.flyway.enabled=false
+# 无库启动：健康检查同样可达（迁移与集成测试的权威验证在 CI）
 ```
+
+### 一条命令跑门禁
+
+```bash
+cd backend/e-aio && mvn -B verify   # 需要 Docker：含 Testcontainers 集成测试
+cd frontend && npm test && npm run lint && npm run build
+```
+
+门禁矩阵、无容器降级路径与环境要求见 [docs/agents/build-and-test.md](docs/agents/build-and-test.md)；贡献流程与提交规范见 [AGENTS.md](AGENTS.md)。
 
 ---
 

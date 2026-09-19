@@ -32,3 +32,6 @@ tmp/
 
 # javap 解包探针目录
 .aio-probe*/
+
+# 本地编排凭据（只提交 .env.example 样例值）
+.env

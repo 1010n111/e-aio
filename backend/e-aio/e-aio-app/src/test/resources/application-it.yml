@@ -1,0 +1,11 @@
+# it profile：集成测试用（Testcontainers 起 PostgreSQL 17 + Redis 7）
+#
+# 与基础配置的差异只有一处：**把数据源自动配置放回来**（基础配置排除它是为了无库也能启动，
+# 见 application.yml 的说明）。连接信息由 Testcontainers 在运行时注入（动态属性），
+# 这里不写死任何地址与凭据。
+spring:
+  autoconfigure:
+    exclude:
+  flyway:
+    # 集成测试要真跑迁移，不能继承测试环境的 spring.flyway.enabled=false
+    enabled: true

@@ -27,7 +27,7 @@
       <version>${project.version}</version>
     </dependency>
 
-    <!-- P0 运行依赖（P0 册 3.1.2 基线）：Actuator 与结构化日志编码器随 T8/后续引入 -->
+    <!-- P0 运行依赖（P0 册 3.1.2 基线）：结构化日志编码器随 T8/后续引入 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
@@ -39,6 +39,11 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-aspectj</artifactId>
+    </dependency>
+    <!-- 健康检查 /actuator/health：本地编排与 CI 的可达性探测（P0 册 3.8/5.2） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
     <!-- 数据访问与迁移（每模块独立 Flyway 实例，装配见 com.eaio.app.config.ModuleFlywayConfig） -->
@@ -73,6 +78,18 @@
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- 集成测试：Testcontainers（版本由 testcontainers-bom 管；注意 2.x 的坐标带前缀） -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

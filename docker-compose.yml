@@ -1,0 +1,51 @@
+# e-aio 本地编排（P0 册 3.8）：PostgreSQL + Redis
+#
+# 与 CI 使用**同一镜像**（CI 的 Testcontainers 也从这里取的镜像名）：
+#   - postgres: pgvector/pgvector:pg17（PostgreSQL 17 + pgvector；P0 只建扩展，向量检索 P1 用）
+#   - redis:    redis:7-alpine
+#
+# 用法：
+#   cp .env.example .env      # 只放样例值，不要提交真实凭据（.gitignore 已忽略 .env）
+#   docker compose up -d postgres redis
+#   docker compose ps
+#
+# 注意：本文件在**无 Docker 的机器上无法验证**（P0 已知），迁移与集成的权威验证在 CI（build-and-test.md）。
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: eaio-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-eaio}
+      POSTGRES_USER: ${POSTGRES_USER:-eaio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eaio}
+      # 迁移会各自建 Schema（eaio_platform 等），这里给应用角色建 Schema 的权限（P0 册 3.6 数据库权限）
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - eaio-postgres-data:/var/lib/postgresql/data
+      # 初始化脚本：建扩展（幂等），P1 用向量检索时零改动
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eaio} -d ${POSTGRES_DB:-eaio}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: eaio-redis
+    # 幂等占位存这里（P0 册 3.2.5）；本地不开持久化，重启即清空
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  eaio-postgres-data:
+    # 显式命名，避免 compose 项目名变化导致数据卷分裂
+    name: eaio-postgres-data

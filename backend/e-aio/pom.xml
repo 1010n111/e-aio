@@ -25,6 +25,9 @@
     <!-- 框架补丁浮动：下列两项与 Boot 配套，只写小版本（P0 册 3.1.2 版本策略） -->
     <spring-modulith.version>2.1.1</spring-modulith.version>
     <archunit.version>1.5.0</archunit.version>
+    <testcontainers.version>2.0.5</testcontainers.version>
+    <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
   </properties>
 
   <!--
@@ -50,23 +53,41 @@
     </dependency>
   </dependencies>
 
-  <dependencyManagement>
-    <dependencies>
-      <!-- Boot BOM 不含 Modulith 与 ArchUnit：这两项自行锁定（P0 册 3.1.2 已核实版本） -->
-      <dependency>
-        <groupId>org.springframework.modulith</groupId>
-        <artifactId>spring-modulith-bom</artifactId>
-        <version>${spring-modulith.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-      <dependency>
-        <groupId>com.tngtech.archunit</groupId>
-        <artifactId>archunit-junit5</artifactId>
-        <version>${archunit.version}</version>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
+    <dependencyManagement>
+      <dependencies>
+        <!-- Boot BOM 不含 Modulith 与 ArchUnit：这两项自行锁定（P0 册 3.1.2 已核实版本） -->
+        <dependency>
+          <groupId>org.springframework.modulith</groupId>
+          <artifactId>spring-modulith-bom</artifactId>
+          <version>${spring-modulith.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+        <dependency>
+          <groupId>com.tngtech.archunit</groupId>
+          <artifactId>archunit-junit5</artifactId>
+          <version>${archunit.version}</version>
+        </dependency>
+        <!-- Testcontainers 2.x 的坐标变了（-postgresql/-junit-jupiter）：显式导入其 BOM，避免版本漂移 -->
+        <dependency>
+          <groupId>org.testcontainers</groupId>
+          <artifactId>testcontainers-bom</artifactId>
+          <version>${testcontainers.version}</version>
+          <type>pom</type>
+          <scope>import</scope>
+        </dependency>
+        <dependency>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>${license-maven-plugin.version}</version>
+        </dependency>
+        <dependency>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${maven-failsafe-plugin.version}</version>
+        </dependency>
+      </dependencies>
+    </dependencyManagement>
 
   <build>
     <pluginManagement>
@@ -75,8 +96,81 @@
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-maven-plugin</artifactId>
         </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>${license-maven-plugin.version}</version>
+        </plugin>
       </plugins>
     </pluginManagement>
+    <plugins>
+      <!--
+        集成测试（*IT）与单元测试（*Test）分开：`mvn -B test` 只跑单测与架构测试（无容器也能全绿），
+        `mvn -B verify` 追加 Failsafe 跑 Testcontainers 集成测试（P0 册 3.8 阶段 5）。
+        `-DskipITs` 跳过集成测试：无 Docker 机器的降级路径（权威验证在 CI）。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- License 扫描（P0 册 3.8 阶段 6）：生成依赖许可证清单，白名单外/缺失即失败；CVE 扫描属 P1。
+           参数名必须是 includedLicenses——写成 licenses 会被插件静默忽略（实测踩到），变成"只出报告不校验"。 -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <configuration>
+          <failOnMissing>true</failOnMissing>
+          <acceptPomPackaging>true</acceptPomPackaging>
+          <includedLicenses>
+            <includedLicense>Apache-2.0</includedLicense>
+            <includedLicense>Apache License, Version 2.0</includedLicense>
+            <includedLicense>Apache 2</includedLicense>
+            <includedLicense>Apache 2.0</includedLicense>
+            <includedLicense>Apache License 2.0</includedLicense>
+            <includedLicense>Apache Software License, Version 2.0</includedLicense>
+            <includedLicense>The Apache Software License, Version 2.0</includedLicense>
+            <includedLicense>MIT</includedLicense>
+            <includedLicense>MIT License</includedLicense>
+            <includedLicense>The MIT License</includedLicense>
+            <includedLicense>EPL-2.0</includedLicense>
+            <includedLicense>EPL 2.0</includedLicense>
+            <includedLicense>Eclipse Public License - v 2.0</includedLicense>
+            <includedLicense>Eclipse Public License v2.0</includedLicense>
+            <includedLicense>EDL-1.0</includedLicense>
+            <includedLicense>Eclipse Distribution License - v 1.0</includedLicense>
+            <includedLicense>BSD-2-Clause</includedLicense>
+            <includedLicense>BSD-3-Clause</includedLicense>
+            <includedLicense>PostgreSQL</includedLicense>
+            <includedLicense>PostgreSQL License</includedLicense>
+            <includedLicense>The PostgreSQL License</includedLicense>
+            <includedLicense>MulanPSL-2.0</includedLicense>
+            <includedLicense>UPL-1.0</includedLicense>
+            <includedLicense>Universal Permissive License, Version 1.0</includedLicense>
+            <includedLicense>LGPL-2.1-only</includedLicense>
+            <includedLicense>GNU Lesser General Public License</includedLicense>
+            <includedLicense>CDDL-1.1</includedLicense>
+            <includedLicense>CDDL+GPLv2</includedLicense>
+          </includedLicenses>
+        </configuration>
+        <executions>
+          <execution>
+            <id>license-report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>add-third-party</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
   </build>
 </project>
 
