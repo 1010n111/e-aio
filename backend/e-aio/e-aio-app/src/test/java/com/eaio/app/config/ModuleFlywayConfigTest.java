@@ -6,33 +6,38 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.flyway.autoconfigure.FlywayMigrationInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
+import org.springframework.test.context.ActiveProfiles;
 
 /**
  * 迁移装配的门槛行为（P0 册 3.6）。
  *
- * <p>这里不连数据库：只验证"没有数据源就不注册迁移 Bean""登记为空要在启动时报出可读错误"。
- * 真实迁移（建 Schema、历史表落位、版本号=1）由 Testcontainers PostgreSQL 集成测试承担。
+ * <p>这里不连真实数据库：验证"开关关闭时不装配""登记为空时启动失败""配置了库却没有数据源时启动失败"
+ * "迁移在启动时确实被执行（连不上就启动失败，而不是静默跳过）"。
+ * **迁移真的跑通**由集成测试 `PlatformMigrationIT` 在真实 PostgreSQL 上验证（本机无 Docker 时跳过，权威在 CI）。
  */
 @ActiveProfiles("test")
 class ModuleFlywayConfigTest {
 
-    /** 只提供一个未连接的数据源：足以让装配发生，但不会真的连库（迁移在触发器里才会连）。 */
+    /**
+     * 只提供一个**连不上**的数据源：足以让装配发生，且让"迁移必须执行"这件事以连接失败的形式暴露出来。
+     */
     @Configuration(proxyBeanMethods = false)
-    static class WithDataSource {
+    static class WithUnreachableDataSource {
 
         @Bean
         DataSource dataSource() {
-            return new SimpleDriverDataSource();
+            SimpleDriverDataSource dataSource = new SimpleDriverDataSource();
+            dataSource.setUrl("jdbc:postgresql://127.0.0.1:1/eaio-nope");
+            dataSource.setUsername("nobody");
+            dataSource.setPassword("nobody");
+            return dataSource;
         }
     }
 
@@ -41,39 +46,43 @@ class ModuleFlywayConfigTest {
             .withUserConfiguration(ModuleFlywayConfig.class);
 
     @Test
-    @DisplayName("未配置数据库：不产生迁移实例与触发器，应用按\"无库启动\"运行")
-    void withoutDataSourceNoMigrationBeans() {
+    @DisplayName("未配置数据库：不装配迁移，应用按\"无库启动\"运行")
+    void withoutDataSourceNoMigration() {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
-            // 显式判定为"无库"时 @Bean 返回 null，resolver 给出 Spring 的 NullBean
             assertThat(context.getBean("moduleInstances").getClass().getSimpleName()).isEqualTo("NullBean");
-            assertThat(context.getBean("moduleFlywayInitializers", List.class)).isEmpty();
-            assertThat(context).doesNotHaveBean(FlywayMigrationInitializer.class);
+            assertThat(context.getBean(MigrationRunner.class).outcomes()).isEmpty();
         });
+    }
+
+    @Test
+    @DisplayName("开关关闭：即使有数据源也不装配迁移")
+    void disabledRegistersNothing() {
+        runner.withUserConfiguration(WithUnreachableDataSource.class)
+                .withPropertyValues("eaio.flyway.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(ModuleInstances.class);
+                    assertThat(context).doesNotHaveBean(MigrationRunner.class);
+                });
     }
 
     @Test
     @DisplayName("配置了数据库却没起数据源：启动失败（不静默跳过迁移）")
     void configuredButNoDataSourceFails() {
         runner.withPropertyValues("spring.datasource.url=jdbc:postgresql://localhost:5432/eaio")
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .rootCause()
+                            .hasMessageContaining("已配置 spring.datasource.url");
+                });
     }
 
     @Test
-    @DisplayName("开关关闭：即使有数据源也不注册迁移 Bean")
-    void disabledRegistersNoMigrationBeans() {
-        runner.withUserConfiguration(WithDataSource.class)
-                .withPropertyValues("eaio.flyway.enabled=false")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).doesNotHaveBean(ModuleInstances.class);
-                    assertThat(context).doesNotHaveBean(Flyway.class);
-                });
-    }
-    @Test
-    @DisplayName("有数据源但模块登记为空：启动即失败，并给出可读原因")
+    @DisplayName("模块登记为空：启动失败并给出可读原因")
     void emptyRegistryFailsLoudly() {
-        runner.withUserConfiguration(WithDataSource.class)
+        runner.withUserConfiguration(WithUnreachableDataSource.class)
                 .withPropertyValues("eaio.flyway.modules=")
                 .run(context -> {
                     assertThat(context).hasFailed();
@@ -85,18 +94,13 @@ class ModuleFlywayConfigTest {
     }
 
     @Test
-    @DisplayName("有数据源且登记了模块：按登记逐模块建实例与触发器")
-    void registersOneInstanceAndInitializerPerModule() {
-        runner.withUserConfiguration(WithDataSource.class)
+    @DisplayName("迁移在启动时真的执行：数据源连不上就启动失败（而不是带着旧结构起来）")
+    void migrationRunsAtStartupAndFailsLoudly() {
+        runner.withUserConfiguration(WithUnreachableDataSource.class)
                 .withPropertyValues("eaio.flyway.modules=platform")
                 .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(ModuleInstances.class);
-                    ModuleInstances instances = context.getBean(ModuleInstances.class);
-                    assertThat(instances.modules()).hasSize(1);
-                    assertThat(instances.modules().get(0).name()).isEqualTo("platform");
-                    assertThat(instances.modules().get(0).schema()).isEqualTo("eaio_platform");
-                    assertThat(context).hasBean("moduleFlywayInitializers");
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).hasStackTraceContaining("moduleMigrationRunner");
                 });
     }
 
@@ -128,4 +132,3 @@ class ModuleFlywayConfigTest {
         assertThat(new ModuleFlywayProperties(true, null).modules()).isEmpty();
     }
 }
-

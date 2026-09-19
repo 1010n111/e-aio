@@ -9,6 +9,8 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
+import com.eaio.app.config.MigrationRunner;
+import com.eaio.app.config.ModuleInstances;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +26,9 @@ import org.springframework.web.client.RestClient;
  *
  * <p>与单元测试的分工：这里验证**真实中间件**参与的那部分——迁移在真实 PostgreSQL 上跑、
  * 幂等占位落在真实 Redis 上。这三件事在单测里无法证明（无 Docker 时本类整体跳过，权威验证在 CI）。
+ *
+ * <p>请求路径带 `/api`（servlet context-path，属契约）：基础配置里它是 `/api`，测试也不覆盖它
+ * ——覆盖不掉且不该覆盖（见 application-it.yml 的实测说明）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PlatformMigrationIT extends IntegrationTestBase {
@@ -31,29 +36,41 @@ class PlatformMigrationIT extends IntegrationTestBase {
     @Autowired
     private DataSource dataSource;
 
+    @Autowired
+    private MigrationRunner migrationRunner;
+
+    @Autowired
+    private ModuleInstances moduleInstances;
+
     @LocalServerPort
     private int port;
 
     @Test
-    @DisplayName("空库迁移：平台 Schema 自动创建、历史表落位、基线版本为 1")
+    @DisplayName("迁移在应用启动时已执行：平台模块执行了脚本、目标版本为 1")
+    void migrationRanAtStartup() {
+        assertThat(moduleInstances.modules()).hasSize(1);
+        assertThat(moduleInstances.modules().get(0).schema()).isEqualTo("eaio_platform");
+
+        assertThat(migrationRunner.outcomes()).hasSize(1);
+        MigrationRunner.Outcome platform = migrationRunner.outcomes().get(0);
+        assertThat(platform.module()).isEqualTo("platform");
+        assertThat(platform.schema()).isEqualTo("eaio_platform");
+        assertThat(platform.migrationsExecuted()).as("空库首次启动必须真的执行了基线脚本").isEqualTo(1);
+        assertThat(platform.targetVersion()).isEqualTo("1");
+    }
+
+    @Test
+    @DisplayName("迁移落库：平台 Schema 存在、历史表落位、基线成功")
     void migrationCreatesSchemaAndHistory() throws Exception {
         try (Connection connection = dataSource.getConnection();
-                Statement statement = connection.createStatement()) {
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(
+                        "select version, success from eaio_platform.flyway_schema_history order by installed_rank")) {
 
-            // 历史表：Flyway 建在平台模块自己的 Schema 内（每模块独立实例，P0 册 3.6）
-            try (ResultSet columns = connection.getMetaData()
-                    .getTables(null, "eaio_platform", "flyway_schema_history", null)) {
-                assertThat(columns.next()).as("eaio_platform.flyway_schema_history 必须存在").isTrue();
-            }
-
-            // 基线版本 = 1，且没有失败记录
-            try (ResultSet rows = statement.executeQuery(
-                    "select version, success from eaio_platform.flyway_schema_history order by installed_rank")) {
-                assertThat(rows.next()).as("基线迁移必须留下一条记录").isTrue();
-                assertThat(rows.getString("version")).isEqualTo("1");
-                assertThat(rows.getBoolean("success")).isTrue();
-                assertThat(rows.next()).as("P0 只有 V1 基线，不应有第二条记录").isFalse();
-            }
+            assertThat(rows.next()).as("基线迁移必须留下一条记录").isTrue();
+            assertThat(rows.getString("version")).isEqualTo("1");
+            assertThat(rows.getBoolean("success")).isTrue();
+            assertThat(rows.next()).as("P0 只有 V1 基线，不应有第二条记录").isFalse();
         }
     }
 
@@ -80,16 +97,16 @@ class PlatformMigrationIT extends IntegrationTestBase {
 
         assertThat(first).contains("\"code\":0");
         assertThat(second).contains("\"code\":10501");
-        // 重放不得执行业务：业务返回的雪花 ID 不应出现第二次的输出里（只有 error envelope）
+        // 重放不得执行业务：业务数据里才有 id，错误返回体没有
         assertThat(second).doesNotContain("\"id\"");
     }
 
     @Test
-    @DisplayName("健康检查可达（无额外依赖注入时也返回 UP）")
+    @DisplayName("健康检查可达（/api 前缀属契约）")
     void actuatorHealthIsReachable() {
         RestClient client = RestClient.create("http://localhost:" + port);
 
-        var response = client.get().uri("/actuator/health").retrieve().toEntity(String.class);
+        var response = client.get().uri("/api/actuator/health").retrieve().toEntity(String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
         assertThat(response.getBody()).contains("UP");

@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.flyway.autoconfigure.FlywayMigrationInitializer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -21,15 +20,17 @@ import java.util.List;
  * <p>单一 Flyway 实例 + 多 Schema 会让全部模块共享一个版本号序列与一张历史表，破坏"模块可独立演进"
  * （HLD 13.1），因此每模块一个实例：各自的历史表落在自己的默认 Schema 内。
  *
- * <p>三个刻意的选择：
+ * <p>四个刻意的选择：
  * <ul>
  *   <li>排除默认的 {@code FlywayAutoConfiguration}（见 {@code EaioApplication} 与 {@code application.yml}）：
  *       否则 Boot 还会按 {@code spring.flyway.*} 再建一个"全局"实例，迁移跑两遍；</li>
- *   <li>复用 Boot 的 {@link FlywayMigrationInitializer} 作为迁移触发器，而不是自己写
- *       {@code InitializingBean}——初始化顺序与失败语义交给框架，配置类只负责组装；</li>
- *   <li>"有没有数据库"在装配处**显式判定**（{@code dataSourceProvider.getIfAvailable()}），
+ *   <li>"有没有数据库"在装配处**显式判定**（{@code ObjectProvider#getIfAvailable}），
  *       不用 {@code @ConditionalOnBean}：条件注解在用户 {@code @Configuration} 上按注册顺序求值，
- *       看不到同一批配置里声明的数据源（实测会漏装配），用它等于把关键行为留给顺序巧合。</li>
+ *       看不到同一批配置里声明的数据源（实测漏装配）；</li>
+ *   <li>**迁移在上下文启动时显式执行**（{@link MigrationRunner}），不依赖"某个 Bean 恰好被实例化"：
+ *       复用 Boot 的 {@code FlywayMigrationInitializer} 时实测迁移没跑（库表为空而应用照常启动），
+ *       这类失败会伪装成"迁移写错"，排查成本高；显式调用让"迁移未跑"变成不可能；</li>
+ *   <li>迁移失败 = Bean 创建失败 = **启动失败**：生产配了库却迁移不了，绝不允许带着旧结构起来。</li>
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
@@ -77,24 +78,28 @@ public class ModuleFlywayConfig {
         return new ModuleInstances(List.copyOf(modules));
     }
 
-    /** 逐模块迁移：一个模块一个触发器，历史表与版本号互不影响。 */
+    /**
+     * 启动即迁移：一个模块一次 {@code migrate()}，按登记顺序执行。
+     *
+     * <p>返回的 {@link MigrationRunner} 是普通单例 Bean，因此该 Bean 一旦实例化就真的把迁移跑完
+     * （上下文 refresh 阶段），不依赖其他组件的实例化时机；迁移结果同时成为可断言的证据。
+     */
     @Bean
-    List<FlywayMigrationInitializer> moduleFlywayInitializers(ObjectProvider<ModuleInstances> instancesProvider) {
+    MigrationRunner moduleMigrationRunner(ObjectProvider<ModuleInstances> instancesProvider) {
         ModuleInstances instances = instancesProvider.getIfAvailable();
         if (instances == null) {
-            // 未配置数据库：没有可迁移的实例，返回空列表而不是让启动失败
-            return List.of();
+            // 未配置数据库：没有可迁移的实例，不迁移也不失败
+            return new MigrationRunner(List.of());
         }
-        List<FlywayMigrationInitializer> initializers = new ArrayList<>(instances.modules().size());
-        for (int i = 0; i < instances.modules().size(); i++) {
-            ModuleInstances.Module module = instances.modules().get(i);
-            FlywayMigrationInitializer initializer = new FlywayMigrationInitializer(module.flyway());
-            // 按登记顺序迁移，日志里能看清顺序，P1 出现跨模块依赖时也只需改登记顺序
-            initializer.setOrder(i);
-            initializers.add(initializer);
-            log.info("已登记模块迁移：module={} schema={} location={}",
-                    module.name(), module.schema(), module.flyway().getConfiguration().getLocations()[0]);
+        List<MigrationRunner.Outcome> outcomes = new ArrayList<>(instances.modules().size());
+        for (ModuleInstances.Module module : instances.modules()) {
+            var result = module.flyway().migrate();
+            outcomes.add(new MigrationRunner.Outcome(module.name(), module.schema(),
+                    result.migrationsExecuted, result.targetSchemaVersion));
+            log.info("模块迁移完成：module={} schema={} 执行脚本数={} 目标版本={}",
+                    module.name(), module.schema(), result.migrationsExecuted,
+                    result.targetSchemaVersion == null ? "(无)" : result.targetSchemaVersion);
         }
-        return List.copyOf(initializers);
+        return new MigrationRunner(List.copyOf(outcomes));
     }
 }

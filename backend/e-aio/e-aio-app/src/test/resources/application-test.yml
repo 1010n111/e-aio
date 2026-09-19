@@ -9,10 +9,6 @@ spring:
   autoconfigure:
     # classpath 上有 spring-jdbc（flyway starter 带入），Boot 会无条件建数据源，没有 URL 时启动失败
     exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
-server:
-  servlet:
-    # 生产用 /api 前缀（见主配置）；测试里保持空，便于直接按控制器映射发起请求
-    context-path: ""
 eaio:
   flyway:
     # 单测不需要迁移；迁移的可执行验证在集成测试（profile=it）与 CI 阶段 5

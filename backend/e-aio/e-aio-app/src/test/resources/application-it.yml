@@ -4,12 +4,14 @@
 # 见主配置 application.yml 的说明），并**显式开启迁移**——集成测试要验证的行为全部写明，
 # 不做"继承默认值"的假设。连接信息由 Testcontainers 运行时注入（动态属性），
 # 这里不写死任何地址与凭据。
+#
+# 注意：`server.servlet.context-path` 不在测试里覆盖。实测两条：
+#   1. 基础配置里的 `spring.autoconfigure.exclude` 用 `exclude:`（空值）**可以被覆盖**（已实测）；
+#   2. 但 `server.servlet.context-path: ""` **覆盖不了** `/api`（空字符串不等于清空，实测仍是 /api）。
+# 既然覆盖不掉、又属对外契约（接口路径统一 /api/...），集成测试就直接按 /api 前缀请求。
 spring:
   autoconfigure:
     exclude:
   flyway:
     # 显式开启：集成测试要真跑迁移，不依赖"默认是 true"
     enabled: true
-server:
-  servlet:
-    context-path: ""

@@ -17,6 +17,9 @@ import org.testcontainers.utility.DockerImageName;
  *
  * <p>`disabledWithoutDocker = true`：无 Docker 的机器上**跳过而不是失败**——此时本地验证的权威性
  * 低于 CI（build-and-test.md 写明这条降级路径），CI 上必须真实执行（票面要求）。
+ *
+ * <p>请求路径带 `/api` 前缀：那是 `server.servlet.context-path`，属对外契约的一部分
+ * （P0 册 3.9），测试里覆盖不掉也不该覆盖（见 application-it.yml 的实测说明）。
  */
 @Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("it")
