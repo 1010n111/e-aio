@@ -33,6 +33,13 @@
     <!-- checkstyle 规则集（P1 M1 冻结，含门禁级别）：见 config/checkstyle/checkstyle.xml 头部说明。
          工具版本随插件默认（插件版本已锁），不额外 pin checkstyle 版本，避免引入未验证的 artifact。 -->
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+    <!-- 依赖漏洞扫描（P0 册 3.8 阶段 6 的 CVE 部分；P1-2 册「CI 阶段扩展」启用）：
+         插件 requiredJavaVersion=11，本工程 JDK 21 可用；版本锁定，不随插件默认浮动。
+         锁 12.1.9 而非 13.0.0（实测，2026-09-19）：13.0.0 在**未配置 NVD_API_KEY** 时匿名同步直接失败
+         （`NvdApiException: Invalid API Key, length of 0 too short to provided a masked partial key`
+         → `UpdateException: Error updating the NVD Data` → `NoDataException: No documents exist`），
+         12.1.9 同一命令、同一环境可正常匿名同步（日志 "An NVD API Key was not provided" 后开始下载 NVD 记录）。 -->
+    <dependency-check-maven.version>12.1.9</dependency-check-maven.version>
   </properties>
 
   <!--
@@ -110,6 +117,11 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-checkstyle-plugin</artifactId>
           <version>${maven-checkstyle-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.owasp</groupId>
+          <artifactId>dependency-check-maven</artifactId>
+          <version>${dependency-check-maven.version}</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -227,6 +239,39 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <!--
+        依赖漏洞扫描（P0 册 3.8 阶段 6 的 CVE 部分；P1-2 册「CI 阶段扩展」启用）。
+
+        刻意**不绑定任何生命周期阶段**（该 mojo 自带默认 phase=verify，这里不声明 executions 即不参与构建）：
+        首次同步 NVD 数据库 + 逐依赖分析要几分钟到几十分钟，绑进 validate/verify 会把本地构建与
+        集成测试构建一起拖垮。由 CI 阶段 6 的作业显式调用：
+          cd backend/e-aio && mvn -B org.owasp:dependency-check-maven:check
+
+        失败语义（"高危未评审即阻断"）：发现 CVSS >= 7 且未被 config/dependency-check/suppressions.xml
+        评审接纳的漏洞时构建失败（failBuildOnCVSS=7）。抑制文件当前为**空列表**——未评审 = 失败。
+
+        NVD API Key：由环境变量 NVD_API_KEY 提供（CI secret；参数 nvdApiKeyEnvironmentVariable 即指该变量）。
+        未设置也能跑，但 NVD 对匿名调用限流（5 请求/30 秒），首次同步会非常慢。
+        报告：HTML + JSON，落在各模块 target/dependency-check-report.{html,json}。
+
+        注意：调用 CLI 目标时不走生命周期，因此不会触发 checkstyle/license 等其他门禁——它们由
+        CI 的 backend/integration/license 作业承担（阶段 1–5 权威）。
+      -->
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <configuration>
+          <failBuildOnCVSS>7</failBuildOnCVSS>
+          <suppressionFiles>
+            <suppressionFile>${maven.multiModuleProjectDirectory}/config/dependency-check/suppressions.xml</suppressionFile>
+          </suppressionFiles>
+          <formats>
+            <format>HTML</format>
+            <format>JSON</format>
+          </formats>
+          <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+        </configuration>
       </plugin>
     </plugins>
   </build>

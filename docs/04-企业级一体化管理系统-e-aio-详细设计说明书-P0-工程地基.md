@@ -137,7 +137,7 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 ├── .github/PULL_REQUEST_TEMPLATE.md  # PR 模板（3.8 配套）
 ├── docker-compose.yml                # 本地 PostgreSQL/Redis 编排（见 docs/agents/build-and-test.md）
 ├── .env.example                      # 本地环境变量样例（不含真实密钥）；本地 `cp .env.example .env`，`.env` 已在 .gitignore 中
-├── Dockerfile                        # 应用镜像（多阶段构建）——**属 P1**（随 3.8 阶段 7 镜像构建一并引入）
+├── Dockerfile                        # 应用镜像（多阶段构建）；P0 为单阶段占位，P1 起改为多阶段（3.8 阶段 7，issue #13）
 ├── LICENSE                           # e-aio 自身 Apache-2.0
 ├── NOTICE                            # 第三方组件许可与 RuoYi MIT 版权声明、蓝本 tag/commit
 ├── CONTRIBUTING.md / CODE_OF_CONDUCT.md
@@ -540,9 +540,14 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 | 3 单元测试 | `mvn -B test`（含 ArchUnit） | ✅ |
 | 4 架构测试 | `mvn -B verify -DskipITs`（Modulith verify） | ✅ |
 | 5 集成测试 | Testcontainers 起 PostgreSQL 17（`pgvector/pgvector:pg17`）/ Redis 7 跑 `@SpringBootTest` + Flyway 空库迁移；测试类标 `@Testcontainers(disabledWithoutDocker = true)`——本机无 Docker 时跳过，迁移路径的**权威验证在 CI** | ✅ |
-| 6 安全扫描 | License 扫描（NFR-OSS-04）；**OWASP Dependency-Check 属 P1**（P0 依赖面小、无认证代码，NVD Key 与缓存策略随 P1 一并落地） | ✅（License） |
-| 7 镜像构建 | Docker 多阶段构建，推送 GHCR —— **属 P1**（P0 不交付 `Dockerfile`） | —（P1） |
-| 8 发布 | 打 tag 时发布 Release —— **属 P1** | —（P1） |
+| 6 安全扫描 | License 扫描（NFR-OSS-04）+ **OWASP Dependency-Check**（P1 已启用，见下实现注记） | ✅ |
+| 7 镜像构建 | Docker 多阶段构建，推送 GHCR（**P1 已启用**，见下实现注记） | ✅（P1 起） |
+| 8 发布 | 打 tag 时发布 Release（**P1 已启用**，见下实现注记） | ✅（P1 起） |
+
+**实现注记（P1，issue #13）**：阶段 6–8 已落地，启用状态与失败语义的单一来源是 [build-and-test.md](agents/build-and-test.md)「三项工程门禁」表。
+① **阶段 6**：原 License 作业内追加 `mvn -B org.owasp:dependency-check-maven:check` —— `failBuildOnCVSS=7`，评审豁免清单 `backend/e-aio/config/dependency-check/suppressions.xml` 当前为**空列表**（未评审 = 失败，每条豁免须写理由 + `until` + Issue 号）；插件**刻意不绑生命周期**（NVD 首同步数十分钟，绑 `verify` 会拖垮本地与集成测试），由 CI 阶段 6 显式调用，NVD 库走 CI 缓存 + `NVD_API_KEY` 增量；覆盖 compile/runtime/provided，**不含 test scope**（插件默认 `skipTestScope=true`）。
+② **阶段 7**：`Dockerfile` 改为多阶段（builder `maven:3.9-eclipse-temurin-21` + `RUN --mount=type=cache,target=/root/.m2`；runtime `eclipse-temurin:21-jre`、非 root uid 1001、`HEALTHCHECK` 打 `/api/actuator/health`），实测 `docker run` 后 `docker inspect` = `healthy`、宿主 HTTP 200。
+③ **阶段 8** 只做「tag → 产物可下载」：`.github/workflows/release.yml`（`v*` tag → `mvn -B verify` → 推 GHCR → Release 附门禁那一次的 jar，字节与门禁一致）；**发布到具体部署目标环境与回滚仍不在本批次**（P0 册 3.8 阶段 8 的完整语义需部署目标，属后续）。
 
 配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`LICENSE`（Apache-2.0）、`NOTICE`（含 RuoYi MIT 声明与蓝本 tag/commit）、PR 模板（NFR-OSS-03/05）；本地依赖编排 `docker-compose.yml` + `.env.example`。
 

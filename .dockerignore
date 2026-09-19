@@ -1,0 +1,11 @@
+# 镜像构建上下文裁剪（Dockerfile 只用 backend/e-aio/）：把构建产物与前端依赖挡在上下文之外，
+# 否则 docker build 每次都要把 target/ 与 node_modules 打包上传给 daemon。
+# 注意：**不要**忽略 backend/e-aio/target 之外的后端源码——builder 阶段需要完整反应堆。
+.git
+.github
+.agents
+**/target
+frontend/node_modules
+frontend/dist
+docs
+*.md

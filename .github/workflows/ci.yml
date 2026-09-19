@@ -7,9 +7,11 @@ name: CI
 #   3 单测 ┘
 #   4 架构测试：与单测同一作业（同一份 surefire 报告里跑，避免两次 JVM 启动）
 #   5 集成测试：it 作业（Testcontainers 直接用 runner 自带 Docker，不配置 service container）
-#   6 安全扫描：license 作业（许可证白名单；CVE 扫描属 P1）
+#   6 安全扫描：license 作业（许可证白名单 + OWASP 依赖漏洞扫描，CVE 部分 P1 起启用；
+#              CVSS ≥ 7 且未在 backend/e-aio/config/dependency-check/suppressions.xml 评审接纳即失败）
 #   1b/2b 前端：frontend 作业（lint + build）
-#   7 镜像构建 / 8 发布：属 P1，本批次不交付（P0 册 3.8 阶段 7–8）
+#   7 镜像构建 / 8 发布：不在本文件，改由 .github/workflows/release.yml 承担（tag `v*` 触发；
+#              见 P1-2 册「CI 阶段扩展」与 docs/agents/build-and-test.md）
 
 on:
   push:
@@ -76,7 +78,7 @@ jobs:
           if-no-files-found: ignore
 
   license:
-    name: '阶段 6 许可证扫描（CVE 扫描属 P1）'
+    name: '阶段 6 安全扫描：许可证白名单 + 依赖漏洞（CVE）'
     runs-on: ubuntu-latest
     needs: backend
     steps:
@@ -90,6 +92,31 @@ jobs:
       - name: 许可证白名单校验（阶段 6）
         working-directory: backend/e-aio
         run: mvn $MAVEN_ARGS -DskipTests -DskipITs verify
+      # NVD 数据库（首次全量同步在无 API Key 时限流，很慢：实测匿名约 15 分钟/2 万条，全量 39.5 万条要数小时）。
+      # 缓存命中后每次只做增量更新，让阶段 6 的漏洞扫描保持在分钟级；key 带 run_id，未命中时回退到最近一次缓存。
+      # 首次务必配好 NVD_API_KEY secret，否则这一作业有超时风险。
+      - name: 缓存 NVD 数据库（阶段 6 依赖漏洞扫描加速）
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: dependency-check-data-${{ github.run_id }}
+          restore-keys: dependency-check-data-
+      # 依赖漏洞扫描（阶段 6 的 CVE 部分；插件在 backend/e-aio/pom.xml 里刻意不绑生命周期，
+      # 由这一步显式调用）。失败语义 = "高危未评审即阻断"：CVSS ≥ 7 且未在
+      # backend/e-aio/config/dependency-check/suppressions.xml 评审接纳 → 构建失败（failBuildOnCVSS=7）。
+      # NVD_API_KEY 为可选 secret：不配也能跑（受 NVD 匿名限流），配上则同步快一个量级。
+      - name: 依赖漏洞扫描（阶段 6：CVSS ≥ 7 未评审即失败）
+        working-directory: backend/e-aio
+        run: mvn $MAVEN_ARGS org.owasp:dependency-check-maven:check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      - name: 上传依赖漏洞报告（HTML + JSON）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-reports
+          path: backend/e-aio/**/target/dependency-check-report.*
+          if-no-files-found: ignore
       - name: 上传依赖许可证清单
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OWASP Dependency-Check 抑制（评审）清单 —— P0 册 3.8 阶段 6 / P1-2 册「CI 阶段扩展」。
+
+  语义（"高危未评审即阻断"）：扫描由 CI 阶段 6 作业显式触发（mvn -B org.owasp:dependency-check-maven:check），
+  命中 CVSS >= 7（failBuildOnCVSS=7，见 backend/e-aio/pom.xml）且**不在本文件里**的漏洞即构建失败。
+  本文件当前为**空列表**，因此"未评审 = 失败"：任何高危都会被拦下，直到有人在评审后把结论写进来。
+
+  加一条抑制 = 一次评审结论的落库，必须写清三件事（缺一不写）：
+    1. 为什么不可利用/不可修复（版本已锁、该分析器不适用、上游无补丁……）；
+    2. 到期时间（until 属性，避免"永久豁免"）；
+    3. 谁评审的（notes 里写 Issue 号或 PR，便于追溯）。
+  仅"CI 变红了想让它变绿"不构成评审理由。
+
+  格式（Dependency-Check suppression 1.3；元素名与属性区分大小写）：
+
+    <suppress until="2026-12-31Z">
+      <notes><![CDATA[Issue #NN：<理由>]]></notes>
+      <packageUrl regex="true">^pkg:maven/<groupId>/<artifactId>@.*$</packageUrl>
+      <cve>CVE-YYYY-NNNNN</cve>
+    </suppress>
+
+  可用的匹配元素（择一或组合，越精确越好）：
+    - packageUrl   依赖坐标（推荐，CPE 误报最少；regex="true" 时按正则匹配）
+    - gav          groupId:artifactId:version（同上，老写法）
+    - cpe          具体 CPE 标识
+    - cve          具体 CVE 编号
+    - vulnerabilityName  漏洞名（当 CVE 号缺失时）
+    - sha1         文件指纹（只对 jar 文件生效）
+
+  注意：整条规则"未被任何依赖命中"时默认不报错（failBuildOnUnusedSuppressionRule 未开启），
+  因此清理过期规则要靠人——评审时请顺手删掉已经不再命中的条目。
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+  <!-- 空：本项目尚无经过评审的高危漏洞豁免。 -->
+</suppressions>

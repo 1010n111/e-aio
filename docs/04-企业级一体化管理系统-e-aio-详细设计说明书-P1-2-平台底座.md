@@ -865,6 +865,8 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 
 > **实现注记（T1 已落地）**：规则集在 `backend/e-aio/config/checkstyle/checkstyle.xml`（头部逐条写明纳入与**有意豁免**的理由），门禁级别 = 违规即失败，绑定 `validate` 阶段（`mvn -B compile|test|verify` 都先过 Lint），测试源码同样在范围内；启动类 `EaioApplication` 按文件豁免 `HideUtilityClassConstructor`（`@SpringBootApplication` 是配置类，加私有构造器会让应用起不来）。落地时修掉 6 处既有违规（2 处 `public` 构造器在包私有测试类里多余、1 处超长行、1 处 `equals` 常量未前置、1 处启动类豁免），并用 7 类故意违规验证过规则会判红。
 
+> **实现注记（T2 已落地，issue #13）**：① **阶段 6 = 许可证 + CVE**：`org.owasp:dependency-check-maven` 锁 `12.1.9`（`13.0.0` 匿名同步有回归），**不绑定生命周期阶段**（NVD 同步太慢，绑进 `verify` 会拖垮本地与 IT 构建），由 `.github/workflows/ci.yml` 的 `license` 作业显式跑 `mvn -B org.owasp:dependency-check-maven:check`；`failBuildOnCVSS=7` + 空抑制文件 `backend/e-aio/config/dependency-check/suppressions.xml` = **高危未评审即阻断**。② **阶段 7 = 镜像构建**：根 `Dockerfile` 改多阶段（builder 用 Maven 打可执行 jar + BuildKit `~/.m2` cache mount，runtime 用 JRE 21、非 root、`HEALTHCHECK` → `/api/actuator/health`），实测可构建并以「空应用」形态（无库、无 Redis）启动且健康检查 `healthy`。③ **阶段 8 = tag 发布（本册声明"不交付"的部分按"仅产物可下载"落地）**：新建 `.github/workflows/release.yml`（`on.push.tags: ['v*']` → 门禁 `mvn -B verify` → 推 `ghcr.io/<repo>:<tag>` → GitHub Release 附 `e-aio-app-*.jar`），**不含部署与回滚**——部署目标环境仍不在 M1–M5 范围内，本册"不假装交付部署"的结论不变。三项门禁的启用状态与失败语义登记在 [`build-and-test.md`](agents/build-and-test.md)「三项工程门禁」。
+
 ### 6.3 前端交付范围（M1–M5 切片）
 
 **复用 P0 前端**：`src/api/request.js`（全 POST 硬校验、`ApiError`）、`src/api/codes.js`、`src/api/idempotency.js`、`src/auth/session.js`、`LoginView`/`AppLayout`/`HomeView`。

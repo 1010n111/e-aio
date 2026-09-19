@@ -1,0 +1,97 @@
+name: Release
+
+# P0 册 3.8 的阶段 7（镜像构建）与阶段 8（发布）——P0 标"属 P1"，本文件就是该批次的落点
+# （P1-2 册「CI 阶段扩展」：阶段 7 在 P1 交付；阶段 8 需部署目标环境，本票只做"tag → 产物可下载"）。
+#
+# 触发：只由 tag `v*` 触发（P0 册 3.8 阶段 8"打 tag 时发布 Release"）。
+# 分支推送/PR 不触发——镜像与 Release 只对已打 tag 的提交产生；日常门禁仍在 ci.yml。
+#
+# 顺序（每一步都是发布的前置条件，`needs` 保证失败即不发布）：
+#   gate：与 ci.yml 同口径的全量门禁 `mvn -B verify`（阶段 1–5，权威在 CI）
+#   image：多阶段构建（仓库根 Dockerfile）并推 GHCR
+#   release：把门禁产出的可执行 jar 作为可下载产物附到 GitHub Release
+
+on:
+  push:
+    tags: ['v*']
+
+# 权限最小化：只读写本仓库内容（创建 Release）与包（推 GHCR）
+permissions:
+  contents: write
+  packages: write
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_ARGS: '-B -ntp'
+
+jobs:
+  gate:
+    name: '发布门禁：mvn -B verify（阶段 1-5，与 CI 同口径）'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: 确认 Docker 可用（集成测试用 Testcontainers）
+        run: docker version
+      - name: 全量门禁（阶段 1-5：编译 · Lint · 单测 · 架构测试 · 集成测试）
+        working-directory: backend/e-aio
+        run: mvn $MAVEN_ARGS verify
+      # 产物就是门禁那次构建的 boot jar（spring-boot-maven-plugin repackage 的产物），
+      # 不再为发布单独重构建一份：发布的字节 = 过门禁的字节。
+      - name: 上传可执行 jar（发布产物）
+        uses: actions/upload-artifact@v4
+        with:
+          name: e-aio-app-jar
+          path: backend/e-aio/e-aio-app/target/e-aio-app-*.jar
+          if-no-files-found: error
+
+  image:
+    name: '阶段 7 镜像构建并推送 GHCR'
+    runs-on: ubuntu-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: 启用 Buildx（Dockerfile 的 m2 cache mount 需要 BuildKit）
+        uses: docker/setup-buildx-action@v3
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 多阶段构建并推送（tag = 触发的 tag 名）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: '阶段 8 发布：GitHub Release + 可下载产物'
+    runs-on: ubuntu-latest
+    needs: [gate, image]
+    steps:
+      - name: 取回门禁产出的可执行 jar
+        uses: actions/download-artifact@v4
+        with:
+          name: e-aio-app-jar
+          path: dist
+      - name: 列出待发布产物
+        run: ls -l dist
+      # 用 runner 自带 gh CLI（不引入第三方 release action）；可重复执行：
+      # Release 已存在则只补传产物（--clobber 覆盖同名文件）。
+      - name: 创建 Release 并附可下载产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" dist/e-aio-app-*.jar --clobber
