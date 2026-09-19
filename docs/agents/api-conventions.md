@@ -21,6 +21,8 @@
 
 - 写接口（`Add` / `Up` / `Del` 及业务动作）前端携带 `Idempotency-Key` 请求头；后端 `IdempotencyFilter` 用 Redis SETNX 占位（键 `eaio:{env}:idem:{sha256(URL+key)}`，TTL 24h），重复请求返回 `10501 重复提交`。
 - 占位状态：`PROCESSING`（并发重入防护）→ 成功置 `DONE`（TTL 24h）；业务失败/系统异常**立即释放占位**，允许用户修正后重试（细节见 P0 册 3.2.5）。不缓存、不回放历史结果。
+  - **`PROCESSING` 与 `DONE` 命中均返回 `10501`**（执行中重放同属重复提交，客户端不等待、不轮询该接口）；长任务（导出/批量导入）**不得以幂等键承担结果交付**，走任务 ID + 轮询。
+  - 本机/CI 无 Redis 时 `IdempotencyFilter` 的降级行为见 P0 册 3.2.5。
 - 查询接口不启用；幂等键缺失时放行并记 WARN。
 
 > 前端响应拦截据此判定跳登录，见 [frontend-conventions.md](frontend-conventions.md)。

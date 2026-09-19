@@ -233,6 +233,8 @@ com.eaio.<module>
 - 跨模块仅可依赖 `api` 包；
 - `application` 层调用 `domain` 与 `infrastructure`（依赖倒置：domain 定义接口，infrastructure 实现）。
 
+**Modulith 登记形制（第四轮裁决）**：模块登记放**模块侧**——每个模块根包 `package-info.java` 写 `@ApplicationModule(allowedDependencies = …)`（新增模块自动纳入，无需回改 `e-aio-app`）；`ApplicationModules.verify()` 仍只有一条、跑在 `e-aio-app`。另加 ArchUnit 断言"**每个模块根包的 `package-info.java` 均带 `@ApplicationModule`**"防遗漏——只集中登记在 app 会让新增模块漏登记且未必立刻报错。
+
 **Modulith 可见性落点（P0 必须实现）**：Spring Modulith 默认只暴露模块**根包**类型，故每个模块的 `api` 子包必须显式声明为命名接口，否则 P1 首个业务模块接入时 `ApplicationModules.verify()` 必然失败：
 
 ```java
@@ -328,6 +330,7 @@ public enum ErrorCode {
     IDEMPOTENT_REPLAY(10501, "重复提交"),
     // 模块前缀：业务模块段从 20000 起，每模块预留 1000 号（20000 platform / 21000 iam / 22000 audit …）
     // 10000–19999 之外的空号不回收；模块内自增，跨模块不可能撞号，附录 6.1 仅作索引
+    // 模块侧登记（非 common）：各业务模块根包 package-info.java 声明 @ApplicationModule
     ;
     private final int code;
     private final String message;
@@ -452,6 +455,7 @@ eaio:
 
 > **开关语义（必须遵守）**：`eaio.flyway.enabled` 默认 `true`（生产不得静默跳过迁移）；本地空应用演示在 `application-dev.yml` 设 `false`。**P1 iam 引入认证时在此追加 `eaio.security.jwt.*`**（P0 未声明，避免给出不存在的配置项）。
 > **本地免依赖启动**：dev 未声明数据源时，数据源连接失败不应阻断启动——Flyway 由 `eaio.flyway.enabled=false` 跳过，P0 无需要 DB 的组件；需 DB 的集成测试用 Testcontainers（3.8 阶段 5、5.2）。
+> **SQL 日志（第四轮裁决）**：**不引入 p6spy**——P0 无表、无 Mapper，用不上；后续需要时用 HikariCP 自带日志 + `logging.level`（MyBatis Mapper 日志级别）观测，不为日志引入新坐标。
 
 敏感配置（密码/密钥）一律走环境变量或密钥管理，禁止明文入库。
 
@@ -483,6 +487,7 @@ eaio:
 | 包访问 | `internal/domain/infrastructure` 不得被跨模块引用 |
 | 公共 API | 跨模块仅可依赖 `api` 包类型（该包以 `@NamedInterface` 显式暴露，见 3.1.3） |
 | 命名接口完备 | 断言**每个模块的 `api` 包均带 `@NamedInterface("api")`**（含 `e-aio-common`）——P1 新增模块遗漏即 CI 失败（3.1.3） |
+| 模块登记完备 | 断言**每个模块根包 `package-info.java` 均带 `@ApplicationModule`**（3.1.3，模块侧登记防遗漏） |
 | 错误码分段 | `com.eaio.common.api.ErrorCode` 单测：《 0 仅 `SUCCESS`、通用段落在 `10000–19999`、数值唯一 |
 | 禁止跨 Schema SQL | P0 以代码评审 + 脚本人工核查约束（ArchUnit 不解析 SQL）；SQL 审计插件 P1 评估 |
 
@@ -505,11 +510,16 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 
 配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`LICENSE`（Apache-2.0）、`NOTICE`（含 RuoYi MIT 声明与蓝本 tag/commit）、PR 模板（NFR-OSS-03/05）；本地依赖编排 `docker-compose.yml` + `.env.example`。
 
+**运行环境（第四轮裁决）**：`runs-on: ubuntu-latest` + Temurin **JDK 21**（`actions/setup-java`）+ Node **24**（`actions/setup-node`）；Runner 自带 Docker，Testcontainers 直接可用，**不再额外配置 service container**（避免与 Testcontainers 争夺容器生命周期）。后端 Job 顺序：`mvn -B verify`（含阶段 3–5）→ 前端独立 Job `npm ci && npm run lint && npm run build`。`docker-compose.yml` 形态：`postgres`（`pgvector/pgvector:pg17`，init 脚本 `CREATE EXTENSION IF NOT EXISTS vector`）+ `redis`（`redis:7-alpine`），named volume 持久化，`.env.example` 只放样例值（无真实密钥）。
+
 ### 3.9 前端工程骨架（RuoYi-Vue3 蓝本）
 
 #### 3.9.1 初始化
 
-采用 RuoYi-Vue3 的技术栈（Vue3 + Vite + Element Plus，MIT）**自行初始化工程**（不拷贝其源码，见 3.10 步骤 11），布局与页面写法参考其工程方法论。P0 范围见第四轮 Q21 裁决：仅 request 层 + 路由壳 + 布局 + 登录态占位。
+采用 RuoYi-Vue3 的技术栈（Vue3 + Vite + Element Plus，MIT）**自行初始化工程**（不拷贝其源码，见 3.10 步骤 11），布局与页面写法参考其工程方法论。**P0 只交付最小壳**：请求层（3.9.2）+ 路由壳 + 布局 + 登录态占位（无后端认证，登录页仅作 UI 占位与 code 判定演示）；**动态菜单、权限指令 `v-hasPermi`、字典、水印留 P1**（均依赖 iam/platform 契约，P0 无接口可接）。
+
+- 接口路径统一 `/api/<module>/<resource>/<Action>`（模块名即路径段，见 [api-conventions.md](agents/api-conventions.md)）；Vite 代理 `/api` → 后端。
+- **认证失败处理唯一落点**：全局响应拦截器按 `body.code` 判定（`10401` 跳登录 / `10403` 提示无权限），只做这两个动作、不自动重试；`code !== 0` 一律 reject；**禁止按 HTTP 401/403 判断**（ADR-0001）。
 
 #### 3.9.2 统一请求封装（统一 POST + JSON）
 
@@ -820,6 +830,17 @@ public class RateLimiter {
 | 10403 | 无权限执行该操作 | iam（P1） |
 | 10500 | 系统内部错误 | 全部 |
 | 10501 | 重复提交（幂等拦截） | 全部 |
+| 10502–19999 | 通用段预留（空号不回收） | — |
+
+**模块登记表（单一事实来源）**：P1 起新增模块**必须**按下表登记（模块 → 根包 → Schema → 错误码段 → 状态），不得在别处另建映射；错误码在预留段内自增，空号不回收，跨模块不可能撞号（3.2.3）：
+
+| 模块 | 根包 | Schema | 错误码段（预留 1000 号） | 状态 |
+|------|------|--------|--------------------------|------|
+| platform | `com.eaio.platform` | `eaio_platform` | 20000–20999 | P0 仅基线 Schema（无业务码），P1 启用 |
+| iam | `com.eaio.iam` | `eaio_iam` | 21000–21999 | P1 |
+| audit | `com.eaio.audit` | `eaio_audit` | 22000–22999 | P1 |
+| workflow / approval | `com.eaio.workflow` / `com.eaio.approval` | `eaio_workflow` / `eaio_approval` | 23000–23999 / 24000–24999 | P1–P2 按 HLD 13.2 队列登记 |
+| 其余业务模块 | `com.eaio.<module>` | `eaio_<module>` | 顺延 1000 号段 | 随批次登记 |
 
 ### 6.2 common 对外 API 清单（P0 冻结 V1）
 
@@ -852,4 +873,4 @@ public class RateLimiter {
 | 版本 | 日期 | 主要修订 |
 |------|------|----------|
 | V1.1 | 2026-09-19 | P0 阶段审核修订初版 |
-| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动。 |
+| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）。 |
