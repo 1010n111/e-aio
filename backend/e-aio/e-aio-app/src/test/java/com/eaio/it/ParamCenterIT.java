@@ -216,6 +216,33 @@ class ParamCenterIT extends IntegrationTestBase {
                 .isNotNull();
     }
 
+    @Test
+    @DisplayName("写入范围：模块经 ParamApi 写 SYSTEM 级被拒（20006）；内置参数经管理端删除被拒（20005）")
+    void moduleScopeAndBuiltinProtection() {
+        paramApiSwitchTo(9801L, 9802L);
+
+        assertThatThrownBy(() -> paramApi.set(new ParamSaveCmd("platform.file.max-size", "SYSTEM", 0L, "1",
+                "INT", "file", null, null)))
+                .as("跨模块入口不得改平台配置（P1 册 5.4）")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(20006));
+
+        Long builtinId = jdbc().queryForObject("select id from eaio_platform.param where param_key = ?",
+                Long.class, SEEDED_KEY);
+        Integer version = jdbc().queryForObject("select version from eaio_platform.param where id = ?",
+                Integer.class, builtinId);
+        RestClient client = RestClient.create("http://localhost:" + port);
+        String response = client.post()
+                .uri("/api/platform/param/Del")
+                .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"id\":" + builtinId + ",\"version\":" + version + "}")
+                .retrieve()
+                .body(String.class);
+
+        assertThat(response).as("平台内置参数删不得（20005）").contains("\"code\":20005");
+    }
+
     private static void paramApiSwitchTo(long orgId, long userId) {
         OrgContextStub.CURRENT.set(new OrgContextPort.OrgContext(orgId, userId));
     }
