@@ -105,6 +105,21 @@
     </pluginManagement>
     <plugins>
       <!--
+        Mockito 5 的 inline mock maker 需要 JVM 允许自附加 agent；JDK 21 起默认禁止
+        （jdk.attach.allowAttachSelf=false），实测表现为 "Could not initialize plugin:
+        interface org.mockito.plugins.MockMaker"——与业务代码无关但会让测试全红。
+        显式放行，保证 `mvn -B test` 在任何 JDK 21 环境都能直接跑。
+        注：这里直接写 argLine 会覆盖命令行 `-DargLine`；将来引入 JaCoCo 等需要 argLine 的插件时，
+        把它的参数并入这一行（不要另起一个 argLine）。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+        </configuration>
+      </plugin>
+      <!--
         集成测试（*IT）与单元测试（*Test）分开：`mvn -B test` 只跑单测与架构测试（无容器也能全绿），
         `mvn -B verify` 追加 Failsafe 跑 Testcontainers 集成测试（P0 册 3.8 阶段 5）。
         `-DskipITs` 跳过集成测试：无 Docker 机器的降级路径（权威验证在 CI）。

@@ -377,7 +377,6 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 ### 3.8 缓存管理（FR-PLT-06）
 
 **两级**：Caffeine 本地（`eaio.cache.local.enabled` 默认 true，TTL 60s，`maximumSize` 10000）+ Redis（`eaio.cache.redis.ttl` 默认 30 分钟）。**键规范**：`eaio:{env}:cache:{namespace}:{key}`，由 `com.eaio.common.redis.RedisKeys` 统一构造（禁止散落拼串）。
-
 **穿透/雪崩防护（NFR，必须实现）**：空值占位（`NULL` + 60s 短 TTL）、互斥重建（Redisson 锁，等待 1s 超时后放手让请求回源）、TTL 随机抖动 ±10%。
 
 **失效**：`CacheApi.evict(namespace, key)` / `evictNamespace`；跨实例一致性与 3.4 同策略（短 TTL 兜底，不建广播通道）。

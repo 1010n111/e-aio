@@ -189,7 +189,10 @@ platform 是**通用能力层**的第一个模块，向全部模块提供"与业
 
 ```text
 com.eaio.platform
-├─ package-info.java              @ApplicationModule(allowedDependencies = {"common"})   ← P1 收紧（P0 为空注解）
+├─ package-info.java              @ApplicationModule(allowedDependencies = {"common", "common::api"})   ← P1 收紧（P0 为空注解）
+│                                  注：Modulith 把命名接口当独立目标，只写 "common" 时引用 com.eaio.common.redis/api 会报
+│                                  "depends on named interface(s) 'common :: api' … Allowed targets: common"（M1 实测）；
+│                                  "common::api" 仍属 common，未引入任何业务模块依赖
 ├─ api/                           @NamedInterface("api")：只有 interface + record + enum（跨模块唯一可见面）
 │   ├─ ParamApi DictApi FileApi SchedulerApi ExcelApi CacheApi MonitorApi NoticeApi NotifyTemplateApi
 │   ├─ dto/                       ParamDTO ParamSaveCmd ParamWithSourceDTO DictTypeDTO …（5.3）
@@ -1168,7 +1171,7 @@ P0 册 3.9.2 写的请求层路径是 `src/utils/request.js`；**仓库实际落
 | 表名 | `snake_case` **单数**、模块内不加 `platform_` 前缀（Schema 已隔离），如 `param`、`job_run` |
 | 主键 | `id BIGINT NOT NULL`，雪花 `IdGenerator` 生成（不依赖 DB 序列/自增） |
 | 统一列 | `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`、`created_by BIGINT`、`updated_at TIMESTAMPTZ`、`updated_by BIGINT`、`version INT NOT NULL DEFAULT 0`、`deleted BOOLEAN NOT NULL DEFAULT false`（逻辑删除表） |
-| 时间列 | 一律 `TIMESTAMPTZ`（UTC 存储）；JDBC 连接串追加 `TimeZone=UTC`（P1 修改 `application-local.yml` 的 datasource url；非本册代码范围，登记在 7.5） |
+| 时间列 | 一律 `TIMESTAMPTZ`（UTC 存储）；JDBC 连接串固定会话时区，**pgjdbc 写法是 `?options=-c%20timezone%3DUTC`**（`TimeZone=UTC` 是 MySQL Connector/J 的参数，pgjdbc 当未知属性静默忽略；P1 修改 `application-local.yml` 的 datasource url；非本册代码范围，登记在 7.5） |
 | 枚举 | `VARCHAR(32)` + `CHECK` 约束（不用 PostgreSQL `ENUM`） |
 | 索引 / 约束 | `idx_<table>_<cols>` / `uk_<table>_<cols>` / `pk_<table>` / `ck_<table>_<col>` / `fk_<table>_<ref>` |
 | 逻辑删除 | `deleted = true` 后查询默认不可见；唯一索引一律带 `WHERE deleted = false`（允许"删除后重建同键"） |
@@ -2217,7 +2220,7 @@ public interface NotifyTemplateApi {
 | `moduleErrorCodesWithinSegment`（**P1 新增**） | `PlatformErrorCode` 的每个常量码 ∈ [20000, 20999]，且与 `ErrorCode`（通用段）无重号 | P0 册 6.3 第 7 条 |
 | `platformInternalIsNotReferenced`（**P1 新增**） | 非 `com.eaio.platform` 的类不得依赖 `com.eaio.platform.{application,domain,infrastructure}` | P0 册 6.3 第 7 条 |
 | `platformDoesNotDependOnBusinessModules`（**P1 新增**） | `com.eaio.platform` 不得依赖 `com.eaio.{iam,audit,workflow,approval,mdm,report,oa,portal,ai}`（含 `api` 包） | 2.4.2（成环） |
-| `platformModuleAllowedDependencies`（**P1 新增**） | `package-info` 的 `allowedDependencies` 只含 `common` | P0 册 3.7 |
+| `platformModuleAllowedDependencies`（**P1 新增**） | `package-info` 的 `allowedDependencies` 只含 `common` 与其命名接口（`common::api`；Modulith 把命名接口当独立目标，M1 实测） | P0 册 3.7 |
 | `eventRecordsHaveEventIdFirst`（**P1 新增**） | `events` 包全部 record 的前两个字段为 `eventId`/`occurredAt` | 3.9.1 |
 | Modulith `ApplicationModules.verify()`（P0 已接入） | 模块边界与命名接口在真实依赖图上成立 | HLD 10.1 |
 
@@ -2396,7 +2399,7 @@ public interface NotifyTemplateApi {
 | L7 | 跨时区展示切换与报表按组织时区聚合 | P2（i18n/报表） |
 | L8 | Micrometer Tracing/OTel 桥接、Grafana 面板与 Prometheus 规则文件 | P2（可观测性专项） |
 | L9 | 信创数据库方言抽象（含 `jsonb` 替代） | P1 另册（P0 册 6.3 第 6 条） |
-| L10 | `application-local.yml` 的 datasource URL 追加 `TimeZone=UTC`；P0 册 3.9.2 的 `src/utils/request.js` 措辞同步为实际路径 `src/api/request.js` | P1 收尾（1 行改动 + 文档措辞） |
+| L10 | `application-local.yml` 的 datasource URL 固定会话时区——**M1 已落地**，写成 pgjdbc 有效形式 `?options=-c%20timezone%3DUTC`（`TimeZone=UTC` 会被 pgjdbc 静默忽略，等于没配）；P0 册 3.9.2 的 `src/utils/request.js` 措辞同步为实际路径 `src/api/request.js` | 余文档措辞（P1 收尾） |
 
 **本册遗留的疑点（评审需裁决）**：
 

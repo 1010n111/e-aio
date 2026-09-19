@@ -1,14 +1,11 @@
 package com.eaio.app.web;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 
 import com.eaio.common.api.ErrorCode;
 import com.eaio.common.api.IdempotencyStore;
 import com.eaio.common.exception.IdempotencyUnavailableException;
+import com.eaio.common.redis.RedisKeys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -108,9 +105,9 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
     }
 
-    /** 占位键：`eaio:{env}:idem:{sha256(URL+key)}`（P0 册 3.2.5）。 */
+    /** 占位键：`eaio:{env}:idem:{sha256(URL+key)}`（P0 册 3.2.5）；构造点唯一，见 {@link RedisKeys}。 */
     String placeholderOf(String uri, String key) {
-        return "eaio:" + environment + ":idem:" + sha256(uri + key);
+        return RedisKeys.idempotency(environment, uri, key);
     }
 
     /** 释放占位：释放本身失败不改变已决定的结果，但要留下 ERROR 让运维看到。 */
@@ -131,15 +128,6 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             return null;
         }
         return key;
-    }
-
-    private static String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("JVM 缺少 SHA-256 实现", e);
-        }
     }
 
     /** 写统一返回体；由装配处注入，避免本类耦合 JSON 实现。 */

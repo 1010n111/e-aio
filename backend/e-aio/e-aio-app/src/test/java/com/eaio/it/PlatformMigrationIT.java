@@ -83,6 +83,16 @@ class PlatformMigrationIT extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("会话时区为 UTC：TIMESTAMPTZ 的读写解释不随容器/主机时区漂移（P1 册 7.5 L10）")
+    void sessionTimezoneIsUtc() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+        assertThat(jdbc.queryForObject("select current_setting('timezone')", String.class))
+                .as("连接串必须固定会话时区（pgjdbc 用 options=-c timezone=UTC）")
+                .isEqualTo("UTC");
+    }
+
+    @Test
     @DisplayName("V1 基线不含业务表（P0 不做业务建模）")
     void baselineHasNoBusinessTables() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);

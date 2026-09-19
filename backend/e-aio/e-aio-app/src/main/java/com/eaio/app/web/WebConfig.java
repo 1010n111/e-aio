@@ -2,7 +2,9 @@ package com.eaio.app.web;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
+import com.eaio.app.redis.SpringRedisKit;
 import com.eaio.common.api.ErrorCode;
 import com.eaio.common.api.IdempotencyStore;
 import com.eaio.common.api.Result;
@@ -56,10 +58,19 @@ public class WebConfig {
         StringRedisTemplate redis = redisProvider.getIfAvailable();
         if (redisConfigured && redis != null) {
             log.info("幂等占位使用 Redis（跨实例生效；Redis 不可用时 fail-closed 返回 10502）");
-            return new RedisIdempotencyStore(redis);
+            return new RedisIdempotencyStore(new SpringRedisKit(redis, defaultTtl(environment)));
         }
         log.warn("未配置 Redis：幂等占位退回内存实现，**仅单实例有效**，多实例部署必须配置 Redis");
         return new InMemoryIdempotencyStore();
+    }
+
+    /**
+     * 默认 TTL 取平台缓存的登记属性（P1-2 册 3.4 参数表：{@code eaio.cache.redis.ttl-seconds}，默认 1800 秒）。
+     *
+     * <p>属性名必须与登记表逐字一致：写错不会报错，只会静默用兜底值——那是最难查的一类"配置没生效"。
+     */
+    private static Duration defaultTtl(Environment environment) {
+        return Duration.ofSeconds(environment.getProperty("eaio.cache.redis.ttl-seconds", Long.class, 1800L));
     }
 
     private static String environmentOf(Environment environment) {

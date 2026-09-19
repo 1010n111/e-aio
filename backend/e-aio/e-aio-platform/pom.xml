@@ -15,10 +15,19 @@
   <description>平台支撑模块：P0 仅承载平台自有迁移脚本（classpath:db/migration/platform），无业务代码</description>
 
   <!--
-    P0 无业务代码、无运行时依赖。迁移基线 V1__baseline.sql 随 T3 落位：
-    脚本只允许 Schema 与注释，不含业务表；P1 平台迁移自 V2__ 起连续编号。
+    P1 起本模块承载平台业务代码。依赖方向（P1 册 2.4.1、ADR-0005）：
+    编译期只依赖通用能力层（e-aio-common），**对 iam/audit 等业务模块零依赖**——
+    需要组织上下文与审计时走自有端口 com.eaio.platform.api.port，由应用壳注入适配器。
+    持久层（MyBatis-Plus）与 Redis（Redisson）随各自首个消费者引入，见各期票。
   -->
   <dependencies>
+    <!-- 通用能力层：契约（Result/PageResult/ErrorCode）、门面（JsonUtils/RedisKit/RedisKeys） -->
+    <dependency>
+      <groupId>com.eaio</groupId>
+      <artifactId>e-aio-common</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
     <!-- 只为根包声明 @ApplicationModule（模块侧登记）：modulith-api 不引 Spring 容器与启动器 -->
     <dependency>
       <groupId>org.springframework.modulith</groupId>

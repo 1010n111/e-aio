@@ -776,6 +776,8 @@ public class RateLimiter {
 }
 ```
 
+**实现注记（P1 落地时补，不改语义）**：上表冻结的是**方法集合与语义**，不是"必须是 class"。代码里 `RedisKit` 落成**接口**（`com.eaio.common.redis.RedisKit`）：通用能力层零运行时依赖，且 P0 册 3.7 的 `commonIsPure` 明令禁止把 `org.springframework.data..` 带进 common，实现只能由装配层提供（`com.eaio.app.redis.SpringRedisKit`，首个消费者是 P0 幂等占位的 SETNX，见 3.2.5）。`DistributedLock`/`RateLimiter` 同理随首个使用方引入，避免"无人使用先建栈"。
+
 **键规范**：`eaio:{env}:{biz}:{id}`，如 `eaio:prod:cache:crm:customer:1001`；统一在 `RedisKeys` 常量类登记，禁止散落字面量。
 
 **一致性**：缓存失效走事件（`MasterDataChangedEvent` 等，P1 落地）；`RedisKit` 提供显式失效方法供事件监听器调用。
