@@ -429,6 +429,7 @@ sequenceDiagram
 | 10 | 3.1.6"写：L2 删除失败记 ERROR，广播跳过" | L2 删除失败与广播失败都记 **WARN**；广播失败不影响本机 L1/L2 失效 | Redis 缺失/抖动时 ERROR 会持续刷屏，而"靠 L1 TTL 兜底"是 3.1.5 设计内的降级路径，不是故障；WARN 已带 key 与原因，仍可检索 |
 | 11 | 3.1.6"广播订阅回调抛异常：捕获并记录" | `ParamInvalidationSubscriber.onMessage` 整体 try/catch（解析与 resolver 调用都在内），失败只记 WARN | 订阅线程挂掉会让**所有**实例的失效都失灵——这条是安全边界，不是日志风格 |
 | 12 | 3.1.4 未写订阅容器如何装配 | `ParamInvalidationBroadcastConfig` 建 `RedisMessageListenerContainer`，条件 `spring.data.redis.host`（与装配层判"有没有配 Redis"同款，见 `WebConfig`） | 没配 Redis 时不建容器：否则它会持续重连并把"无库无 Redis 的空应用"刷满 WARN，而那是明确支持的形态（镜像默认形态） |
+| 13 | P1-2 册 331 行"修改时传空表示不变更"（避免误清空） | `ParamAppService.up`：当**新类型为 SECRET、原行已加密、且 `paramValue` 为空**时保留原密文（不重新加密）；非 SECRET 行的空串仍是合法值 | 密钥类参数接口永不回显明文（5.3），管理页编辑时只能留空提交；不留空就保留会变成"一次正常编辑把密钥清成 `encrypt("")`"——不可逆的数据丢失。前端写页面按"掩码行留空"实现并只按 `Result.code` 分支 |
 | 6 | 4.5 种子里 `platform.file.local-root` 默认含运行期占位 `${user.home}` | 迁移装配需显式 `placeholder("user.home", "${user.home}")` 才能原样入库 | Flyway 默认把 `${...}` 当自己的占位符、缺值时直接失败（实测），且不能靠转义 |
 | 7 | 5.2 的 `Up` 错误码含 20004 | `Up` 不产生 20004（不支持改名）；20004 只在 `Add` 撞唯一键时出现 | `(param_key, param_level, owner_id)` 是行身份，改键等于删了重建 |
 | 8 | 7.3 权限点表 | 端点已按 7.3 逐字写 `@PreAuthorize("hasAuthority('platform:param:*')")`；iam 交付前是**契约载体**、尚不生效 | 授权由 iam 能力装配；T14 的 `PermissionCodeContractTest` 与 7.3 逐条比对 |

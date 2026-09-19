@@ -170,7 +170,13 @@ public class ParamAppService {
         return dtoMapper.toDto(item);
     }
 
-    /** 更新一行（按 键+级别+归属 定位，version 乐观锁；缺失即 10003）。 */
+    /**
+     * 更新一行（按 键+级别+归属 定位，version 乐观锁；缺失即 10003）。
+     *
+     * <p><b>空值 = 不变更</b>（P1-2 册 331 行）：密钥类参数接口永不回显明文，管理页只能留空提交，
+     * 因此"SECRET 行 + 空 paramValue"必须保留原密文——否则一次正常编辑就把密钥清成 {@code encrypt("")}，
+     * 而那是不可逆的数据丢失。
+     */
     @Transactional
     public ParamDTO up(ParamSaveCmd cmd) {
         ParamLevel level = levelOf(cmd);
@@ -189,7 +195,10 @@ public class ParamAppService {
         existing.setParamGroup(cmd.paramGroup() == null || cmd.paramGroup().isBlank() ? DEFAULT_GROUP : cmd.paramGroup());
         existing.setRemark(cmd.remark());
         existing.setEncrypted(type.secret());
-        existing.setParamValue(type.secret() ? ParamValueCipher.encrypt(value, cryptoKeys.key()) : value);
+        boolean keepCiphertext = type.secret() && existing.isEncrypted()
+                && (cmd.paramValue() == null || cmd.paramValue().isBlank());
+        existing.setParamValue(keepCiphertext ? existing.getParamValue()
+                : (type.secret() ? ParamValueCipher.encrypt(value, cryptoKeys.key()) : value));
         existing.setUpdatedAt(Instant.now());
         existing.setUpdatedBy(operator);
         existing.setVersion(cmd.version());

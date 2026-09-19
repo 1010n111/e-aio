@@ -143,6 +143,24 @@ class ParamCenterIT extends IntegrationTestBase {
     }
 
     @Test
+    @DisplayName("留空表示不变更：SECRET 行收到空 paramValue 时保留原密文（P1-2 册 331 行）")
+    void blankSecretValueKeepsCiphertext() {
+        String key = "it.param.secret.keep";
+        paramApiSwitchTo(9411L, 9412L);
+        paramApi.set(new ParamSaveCmd(key, "ORG", 9411L, "keep-me", "SECRET", "it", null, null));
+        String before = jdbc().queryForObject("select param_value from eaio_platform.param"
+                + " where param_key = ? and param_level = 'ORG'", String.class, key);
+        assertThat(before).startsWith("enc:v1:");
+
+        paramApi.set(new ParamSaveCmd(key, "ORG", 9411L, "", "SECRET", "it", null, 0));
+
+        assertThat(jdbc().queryForObject("select param_value from eaio_platform.param"
+                + " where param_key = ? and param_level = 'ORG'", String.class, key))
+                .as("空值不得清空密文").isEqualTo(before);
+        assertThat(paramApi.getString(key, null)).as("明文仍可读出").isEqualTo("keep-me");
+    }
+
+    @Test
     @DisplayName("管理页读取端点（真实 HTTP）：GetPage 给出生效值与三级候选，读动作不需要幂等键")
     void pageEndpointOverHttp() {
         RestClient client = RestClient.create("http://localhost:" + port);
