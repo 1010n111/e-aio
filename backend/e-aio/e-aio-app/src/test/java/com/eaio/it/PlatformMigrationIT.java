@@ -56,7 +56,8 @@ class PlatformMigrationIT extends IntegrationTestBase {
         assertThat(platform.module()).isEqualTo("platform");
         assertThat(platform.schema()).isEqualTo("eaio_platform");
         assertThat(platform.migrationsExecuted()).as("空库首次启动必须真的执行了基线脚本").isEqualTo(1);
-        assertThat(platform.targetVersion()).isEqualTo("1");
+        // 同样只断言语义：目标版本是 1（Flyway 12 的字符串形态可能是 "1" 或 "1.0"）
+        assertThat(platform.targetVersion()).as("目标版本应表示 1").matches("1(\\.0+)?");
     }
 
     @Test
@@ -65,10 +66,16 @@ class PlatformMigrationIT extends IntegrationTestBase {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement();
                 ResultSet rows = statement.executeQuery(
-                        "select version, success from eaio_platform.flyway_schema_history order by installed_rank")) {
+                        "select version, description, success from eaio_platform.flyway_schema_history"
+                                + " order by installed_rank")) {
 
             assertThat(rows.next()).as("基线迁移必须留下一条记录").isTrue();
-            assertThat(rows.getString("version")).isEqualTo("1");
+            // 只断言"版本号是 1"的语义，不锁死 Flyway 的字符串形态（12.x 可能是 "1" 或 "1.0"）
+            assertThat(rows.getString("version"))
+                    .as("基线版本号应表示 1")
+                    .isNotNull()
+                    .matches("1(\\.0+)?");
+            assertThat(rows.getString("description")).isEqualTo("baseline");
             assertThat(rows.getBoolean("success")).isTrue();
             assertThat(rows.next()).as("P0 只有 V1 基线，不应有第二条记录").isFalse();
         }
