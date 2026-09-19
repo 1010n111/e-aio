@@ -22,6 +22,7 @@ import com.eaio.platform.api.JobHandler;
 import com.eaio.platform.api.dto.JobContext;
 import com.eaio.platform.domain.job.Job;
 import com.eaio.platform.domain.job.JobRun;
+import com.eaio.platform.application.event.PlatformEventPublisher;
 import com.eaio.platform.domain.job.JobRunStatus;
 import com.eaio.platform.domain.job.JobTriggerType;
 import com.eaio.platform.events.JobFailedEvent;
@@ -31,7 +32,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * {@link JobExecutor} 的状态流转单测（P1 册 3.4.8 的可测点）：成功、失败重投、达到上限的终态、
@@ -50,7 +50,7 @@ class JobExecutorTest {
 
     private JobRunStore runs;
     private JobStore jobs;
-    private ApplicationEventPublisher events;
+    private PlatformEventPublisher publisher;
     private JobExecutor executor;
 
     private final AtomicInteger executions = new AtomicInteger();
@@ -59,14 +59,14 @@ class JobExecutorTest {
     void setUp() {
         runs = mock(JobRunStore.class);
         jobs = mock(JobStore.class);
-        events = mock(ApplicationEventPublisher.class);
+        publisher = mock(PlatformEventPublisher.class);
         executions.set(0);
     }
 
     /** 建执行壳；处理点为传入的实现（每次调用重新建，保证 code 不串）。 */
     private JobExecutor executorWith(JobHandler handler) {
         JobHandlerRegistry registry = new JobHandlerRegistry(List.of(handler));
-        return new JobExecutor(runs, jobs, registry, new JobDtoMapper(), events, new IdGenerator(1));
+        return new JobExecutor(runs, jobs, registry, new JobDtoMapper(), publisher, new IdGenerator(1));
     }
 
     @Test
@@ -91,7 +91,7 @@ class JobExecutorTest {
         assertThat(updated.getValue().getNextRetryTime()).as("成功不排重投").isNull();
 
         verify(jobs).updateLastRun(eq(JOB_CODE), any(Instant.class), eq(JobRunStatus.SUCCESS.name()));
-        verifyNoInteractions(events);
+        verifyNoInteractions(publisher);
         assertThat(executions.get()).isEqualTo(1);
     }
 
@@ -116,7 +116,7 @@ class JobExecutorTest {
                 .isAfterOrEqualTo(before.plusSeconds(29))
                 .isBeforeOrEqualTo(before.plusSeconds(35));
         verify(jobs, never()).updateLastRun(anyString(), any(Instant.class), anyString());
-        verifyNoInteractions(events);
+        verifyNoInteractions(publisher);
     }
 
     @Test
@@ -138,10 +138,9 @@ class JobExecutorTest {
         assertThat(updated.getValue().getNextRetryTime()).isNull();
         verify(jobs, timeout(5000)).updateLastRun(eq(JOB_CODE), any(Instant.class), eq(JobRunStatus.FAILED.name()));
 
-        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
-        verify(events, timeout(5000)).publishEvent(event.capture());
-        assertThat(event.getValue()).isInstanceOf(JobFailedEvent.class);
-        JobFailedEvent failed = (JobFailedEvent) event.getValue();
+        ArgumentCaptor<JobFailedEvent> event = ArgumentCaptor.forClass(JobFailedEvent.class);
+        verify(publisher, timeout(5000)).publish(event.capture());
+        JobFailedEvent failed = event.getValue();
         assertThat(failed.jobCode()).isEqualTo(JOB_CODE);
         assertThat(failed.runId()).isEqualTo(999L);
         assertThat(failed.attempt()).isEqualTo(4);

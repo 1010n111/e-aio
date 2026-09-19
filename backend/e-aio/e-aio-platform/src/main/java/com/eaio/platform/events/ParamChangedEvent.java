@@ -20,5 +20,5 @@ import java.time.Instant;
  * @param ownerId    变更行归属 ID
  */
 public record ParamChangedEvent(String eventId, Instant occurredAt, String changeType, String paramKey,
-        String paramLevel, long ownerId) {
+        String paramLevel, long ownerId) implements PlatformEvent {
 }

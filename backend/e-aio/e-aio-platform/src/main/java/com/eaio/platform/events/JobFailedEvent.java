@@ -30,5 +30,5 @@ public record JobFailedEvent(
         long runId,
         int attempt,
         String errorMessage,
-        String traceId) {
+        String traceId) implements PlatformEvent {
 }

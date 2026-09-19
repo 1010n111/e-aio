@@ -15,6 +15,7 @@ import com.eaio.platform.api.dto.DictItemSaveCmd;
 import com.eaio.platform.api.dto.DictTypeSaveCmd;
 import com.eaio.platform.application.dict.DictDtoMapperImpl;
 import com.eaio.platform.application.dict.DictResolver;
+import com.eaio.platform.application.event.PlatformEventPublisher;
 import com.eaio.platform.application.param.ParamContextProvider;
 import com.eaio.platform.domain.dict.DictItem;
 import com.eaio.platform.domain.dict.DictType;
@@ -25,7 +26,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * {@link DictAppService} 写路径的单测（P1 册 3.2.6 的后四条测试点 + 段内错误码口径）。
@@ -38,7 +38,7 @@ class DictAppServiceTest {
     private final DictStore store = mock(DictStore.class);
     private final DictResolver resolver = mock(DictResolver.class);
     private final ParamContextProvider contexts = mock(ParamContextProvider.class);
-    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    private final PlatformEventPublisher publisher = mock(PlatformEventPublisher.class);
     private final IdGenerator idGenerator = mock(IdGenerator.class);
 
     private DictAppService service;
@@ -50,7 +50,7 @@ class DictAppServiceTest {
         given(idGenerator.nextStr()).willReturn("evt-1");
         given(store.updateById(any())).willReturn(1);
         given(store.updateItemById(any())).willReturn(1);
-        service = new DictAppService(store, resolver, new DictDtoMapperImpl(), contexts, events, idGenerator);
+        service = new DictAppService(store, resolver, new DictDtoMapperImpl(), contexts, publisher, idGenerator);
     }
 
     @Test
@@ -113,14 +113,14 @@ class DictAppServiceTest {
     }
 
     @Test
-    @DisplayName("改项 label：发 DictChangedEvent（eventId 在前）+ 提交后由监听器失效缓存（3.2.6）")
+    @DisplayName("改项 label：经 PlatformEventPublisher 登记 DictChangedEvent（eventId 在前，T8 发件箱）")
     void updateItemPublishesEvent() {
         given(store.rowByTypeValue("it_status", "RUNNING")).willReturn(item("RUNNING"));
 
         service.upItem(cmd("it_status", "RUNNING"));
 
         ArgumentCaptor<DictChangedEvent> captor = ArgumentCaptor.forClass(DictChangedEvent.class);
-        verify(events).publishEvent(captor.capture());
+        verify(publisher).publish(captor.capture());
         DictChangedEvent event = captor.getValue();
         assertThat(event.eventId()).isEqualTo("evt-1");
         assertThat(event.occurredAt()).isNotNull();

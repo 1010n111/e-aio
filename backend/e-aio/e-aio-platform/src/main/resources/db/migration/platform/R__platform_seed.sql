@@ -89,3 +89,17 @@ VALUES
     (56, 'platform.notice.publish.scan', '定时公告发布扫描', 'platform.notice.publish.scan', '0 * * * * *',
         true, 300, 3, 30, false, '到点的定时公告由 DRAFT 置 PUBLISHED（3.8）', 0)
 ON CONFLICT DO NOTHING;
+
+-- P1 T8 追加事件可靠性的 3 个系统参数（P1 册 7.2 的 platform.event.* 三行）。ID 区间 61–70
+-- （与参数 1–10、字典类型 21–24、字典项 31–45、任务 51–56 不冲突；雪花 ID 远大于 9999）。
+-- `param_group = 'event'`：7.2 的表只有「键/默认值/类型/热更新/说明」五列，没有分组列——分组是
+-- 4.3.1 的列（NOT NULL），按既有先例（time/file/excel）取能力名，登记在《实现注记（T8）》。
+-- 三个键都 hot_reload：重投扫描每轮都读参数中心，改完下一轮生效（不用重启）。
+INSERT INTO eaio_platform.param
+    (id, param_key, param_level, owner_id, param_value, value_type, param_group, encrypted, builtin, hot_reload, created_by)
+VALUES
+    (61, 'platform.event.retry-max', 'SYSTEM', 0, '5', 'INT', 'event', false, true, true, 0),
+    (62, 'platform.event.retry-backoff-seconds', 'SYSTEM', 0, '30', 'INT', 'event', false, true, true, 0),
+    (63, 'platform.event.delivery-retain-days', 'SYSTEM', 0, '7', 'INT', 'event', false, true, true, 0)
+ON CONFLICT DO NOTHING;
+

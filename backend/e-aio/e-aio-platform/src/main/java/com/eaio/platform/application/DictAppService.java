@@ -19,6 +19,7 @@ import com.eaio.platform.api.dto.DictTypeQuery;
 import com.eaio.platform.api.dto.DictTypeSaveCmd;
 import com.eaio.platform.application.dict.DictDtoMapper;
 import com.eaio.platform.application.dict.DictResolver;
+import com.eaio.platform.application.event.PlatformEventPublisher;
 import com.eaio.platform.application.param.ParamContextProvider;
 import com.eaio.platform.domain.dict.DictItem;
 import com.eaio.platform.domain.dict.DictStatus;
@@ -27,7 +28,6 @@ import com.eaio.platform.events.DictChangedEvent;
 import com.eaio.platform.infrastructure.persistence.DictStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,16 +60,16 @@ public class DictAppService {
     private final DictResolver resolver;
     private final DictDtoMapper dtoMapper;
     private final ParamContextProvider contexts;
-    private final ApplicationEventPublisher events;
+    private final PlatformEventPublisher publisher;
     private final IdGenerator idGenerator;
 
     public DictAppService(DictStore store, DictResolver resolver, DictDtoMapper dtoMapper,
-            ParamContextProvider contexts, ApplicationEventPublisher events, IdGenerator idGenerator) {
+            ParamContextProvider contexts, PlatformEventPublisher publisher, IdGenerator idGenerator) {
         this.store = store;
         this.resolver = resolver;
         this.dtoMapper = dtoMapper;
         this.contexts = contexts;
-        this.events = events;
+        this.publisher = publisher;
         this.idGenerator = idGenerator;
     }
 
@@ -332,9 +332,12 @@ public class DictAppService {
         return status == null || status.isBlank() ? DictStatus.fromName(current) : statusOf(status);
     }
 
-    /** 事件在**事务内**注册，提交后才投递（{@code @TransactionalEventListener(AFTER_COMMIT)}，3.9.1）。 */
+    /**
+     * 事件在**事务内**登记（{@code event_delivery} 与业务写同生共死），提交后才投递
+     * （T8/3.9.2 第 1 条：轻量发件箱；业务回滚 → 登记一起回滚、监听方完全不被调用）。
+     */
     private void publishChanged(String action, String typeCode, String itemValue, long operator) {
-        events.publishEvent(new DictChangedEvent(idGenerator.nextStr(), Instant.now(), typeCode, itemValue,
+        publisher.publish(new DictChangedEvent(idGenerator.nextStr(), Instant.now(), typeCode, itemValue,
                 action, operator));
         log.info("字典变更：action={} typeCode={} itemValue={}", action, typeCode, itemValue);
     }

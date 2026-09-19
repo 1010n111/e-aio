@@ -23,5 +23,5 @@ public record DictChangedEvent(
         String typeCode,
         String itemValue,
         String action,
-        long operatorId) {
+        long operatorId) implements PlatformEvent {
 }

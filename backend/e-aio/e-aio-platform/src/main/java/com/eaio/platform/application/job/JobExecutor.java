@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.eaio.common.id.IdGenerator;
 import com.eaio.platform.api.JobHandler;
 import com.eaio.platform.api.dto.JobContext;
+import com.eaio.platform.application.event.PlatformEventPublisher;
 import com.eaio.platform.domain.job.Job;
 import com.eaio.platform.domain.job.JobLockHandle;
 import com.eaio.platform.domain.job.JobRetryPolicy;
@@ -26,7 +27,6 @@ import com.eaio.platform.infrastructure.persistence.JobRunStore;
 import com.eaio.platform.infrastructure.persistence.JobStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -67,18 +67,18 @@ public class JobExecutor {
     private final JobStore jobs;
     private final JobHandlerRegistry handlers;
     private final JobDtoMapper dtoMapper;
-    private final ApplicationEventPublisher events;
+    private final PlatformEventPublisher publisher;
     private final IdGenerator idGenerator;
     private final ExecutorService workers;
     private final String nodeId;
 
     public JobExecutor(JobRunStore runs, JobStore jobs, JobHandlerRegistry handlers, JobDtoMapper dtoMapper,
-            ApplicationEventPublisher events, IdGenerator idGenerator) {
+            PlatformEventPublisher publisher, IdGenerator idGenerator) {
         this.runs = runs;
         this.jobs = jobs;
         this.handlers = handlers;
         this.dtoMapper = dtoMapper;
-        this.events = events;
+        this.publisher = publisher;
         this.idGenerator = idGenerator;
         this.workers = Executors.newCachedThreadPool(task -> {
             Thread thread = new Thread(task, "eaio-job-worker-" + THREAD_SEQ.incrementAndGet());
@@ -267,7 +267,9 @@ public class JobExecutor {
         }
         log.error("任务执行失败（终态 {}）：jobCode={} runId={} attempt={} 错误={}", status, job.getJobCode(), runId,
                 attempt, message);
-        events.publishEvent(new JobFailedEvent(idGenerator.nextStr(), now, job.getJobCode(), runId, attempt, message,
+        // T8 起走发件箱：与本次写终态同事务登记 event_delivery（本方法没有事务，publish 自己开一个短事务），
+        // 提交后由 PlatformEventDispatcher 同步投递；投递失败按退避重投、超限进死信（3.9.2）
+        publisher.publish(new JobFailedEvent(idGenerator.nextStr(), now, job.getJobCode(), runId, attempt, message,
                 traceId));
     }
 

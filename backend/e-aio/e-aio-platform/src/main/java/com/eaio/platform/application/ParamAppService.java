@@ -17,6 +17,7 @@ import com.eaio.platform.api.dto.ParamDTO;
 import com.eaio.platform.api.dto.ParamQuery;
 import com.eaio.platform.api.dto.ParamSaveCmd;
 import com.eaio.platform.api.dto.ParamWithSourceDTO;
+import com.eaio.platform.application.event.PlatformEventPublisher;
 import com.eaio.platform.application.param.ParamContextProvider;
 import com.eaio.platform.application.param.ParamCryptoKeys;
 import com.eaio.platform.application.param.ParamDtoMapper;
@@ -35,7 +36,6 @@ import com.eaio.platform.infrastructure.persistence.ParamStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,18 +62,18 @@ public class ParamAppService {
     private final ParamContextProvider contexts;
     private final ParamDtoMapper dtoMapper;
     private final ParamCryptoKeys cryptoKeys;
-    private final ApplicationEventPublisher events;
+    private final PlatformEventPublisher publisher;
     private final IdGenerator idGenerator;
 
     public ParamAppService(ParamStore store, ParamResolver resolver, ParamContextProvider contexts,
-            ParamDtoMapper dtoMapper, ParamCryptoKeys cryptoKeys, ApplicationEventPublisher events,
+            ParamDtoMapper dtoMapper, ParamCryptoKeys cryptoKeys, PlatformEventPublisher publisher,
             IdGenerator idGenerator) {
         this.store = store;
         this.resolver = resolver;
         this.contexts = contexts;
         this.dtoMapper = dtoMapper;
         this.cryptoKeys = cryptoKeys;
-        this.events = events;
+        this.publisher = publisher;
         this.idGenerator = idGenerator;
     }
 
@@ -371,9 +371,12 @@ public class ParamAppService {
         store.appendLog(logItem);
     }
 
-    /** 事件在**事务内**注册，提交后才投递（{@code @TransactionalEventListener(AFTER_COMMIT)}，3.1.4）。 */
+    /**
+     * 事件在**事务内**登记（{@code event_delivery} 与业务写同生共死），提交后才投递
+     * （T8/3.9.2 第 1 条：轻量发件箱；业务回滚 → 登记一起回滚、监听方完全不被调用）。
+     */
     private void publishChanged(String changeType, ParamItem row) {
-        events.publishEvent(new ParamChangedEvent(idGenerator.nextStr(), Instant.now(), changeType, row.getParamKey(),
+        publisher.publish(new ParamChangedEvent(idGenerator.nextStr(), Instant.now(), changeType, row.getParamKey(),
                 row.getParamLevel(), row.getOwnerId()));
         log.info("参数变更：type={} key={} level={} ownerId={}", changeType, row.getParamKey(),
                 row.getParamLevel(), row.getOwnerId());

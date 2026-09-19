@@ -42,7 +42,8 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>跨实例失效广播</b>（Redis Pub/Sub {@code eaio:{env}:platform:ch:invalidation}）不在这里，但
  * "三件事"是配套的：本类的 {@link #invalidate(String)}/{@link #invalidateAll()} 负责清本机 L1 与 L2，
- * 改值方（{@code ParamInvalidationListener}，{@code @TransactionalEventListener(AFTER_COMMIT)}）
+ * 改值方（{@code ParamInvalidationListener}，同步 {@code @EventListener}——提交后才投递由
+ * {@code PlatformEventDispatcher} 的 {@code AFTER_COMMIT} 保证，T8/3.9.2）
  * 另外删 L2 前缀并把失效消息广播出去，其他实例的订阅方（{@code ParamInvalidationSubscriber}）
  * 收到后再调本类的 invalidate——三件事都做齐，其他实例才不会读到旧值（只做广播会漏发布方自己，
  * 只做本机会让其他实例最长读 60s 旧值，L1 TTL 只是兜底）。
