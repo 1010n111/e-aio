@@ -51,6 +51,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-flyway</artifactId>
     </dependency>
+    <!--
+      Flyway 12 起数据库方言拆成独立模块：只引 flyway-core 时 Flyway **不报错也不迁移**，
+      表现为"什么都没做"；CI 上以 "Unsupported Database: PostgreSQL 17.11" 才暴露。
+      因此 PostgreSQL 方言必须显式引入（P0 册 3.1.2 基线里的 flyway-database-postgresql）。
+    -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
