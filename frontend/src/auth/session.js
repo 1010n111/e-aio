@@ -1,7 +1,5 @@
 import { reactive } from 'vue'
 
-import { clearPermissions as clearPermissionCodes } from '@/auth/permissions'
-
 /** 登录页路径（与路由一致）。 */
 export const LOGIN_PATH = '/login'
 
@@ -11,14 +9,13 @@ export const LOGIN_PATH = '/login'
  * 真实登录、令牌刷新、用户信息加载属 P1（iam）；这里刻意不存令牌——
  * P0 后端无认证实现，前端存一个假令牌只会让 P1 误以为认证已就绪。
  *
- * 权限点状态与判定集中在 `@/auth/permissions`（一份状态，不复制），这里转发它的入口，
- * 使"登录态相关的东西"仍有一个稳定入口（见 frontend-conventions 的 `src/auth`）。
+ * 这里也**不存权限点**：M1–M2 不做前端按钮级控制（P1-3 册 3.10.2 / 册 440 行第 18 条），
+ * 按钮显隐等 iam 交付后由 `v-hasPermi` 指令统一接管（P0 册 3.10 步骤 11、P1-4 册 3.12）。
+ * 越权请求后端 `@PreAuthorize` 仍会拒（10403），前端只按 `Result.code` 提示。
  */
 export const authState = reactive({
   loggedIn: false,
 })
-
-export { clearPermissions, hasPermission, setPermissions } from '@/auth/permissions'
 
 const STORAGE_KEY = 'eaio.loggedIn'
 
@@ -41,8 +38,6 @@ export function markLoggedIn() {
 
 export function clearLogin() {
   authState.loggedIn = false
-  // 权限点与登录态同生共死：退出后权限未知，由 iam 重新下发
-  clearPermissionCodes()
   try {
     globalThis.localStorage?.removeItem(STORAGE_KEY)
   } catch {

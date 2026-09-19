@@ -1,8 +1,6 @@
+import { DATA_CONFLICT, FORBIDDEN_CODE, IDEMPOTENCY_KEY_MISSING } from '@/api/codes'
 import { action, query } from '@/api/request'
 import {
-  DATA_CONFLICT,
-  FORBIDDEN,
-  IDEMPOTENCY_KEY_MISSING,
   PARAM_BUILTIN_READONLY,
   PARAM_DUPLICATED,
   PARAM_NOT_FOUND,
@@ -18,16 +16,6 @@ export const PARAM_LEVELS = Object.freeze(['SYSTEM', 'ORG', 'USER'])
 
 /** 值类型（后端 `ParamValueType` 枚举名，P1 册 4.3.1）；`SECRET` 由后端加密落库。 */
 export const PARAM_VALUE_TYPES = Object.freeze(['STRING', 'INT', 'BOOL', 'DECIMAL', 'JSON', 'SECRET'])
-
-/** 权限点（P1 册 7.3，与后端 `@PreAuthorize` 逐字一致）。 */
-export const PARAM_PERMISSIONS = Object.freeze({
-  list: 'platform:param:list',
-  get: 'platform:param:get',
-  add: 'platform:param:add',
-  up: 'platform:param:up',
-  del: 'platform:param:del',
-  refresh: 'platform:param:refresh',
-})
 
 /**
  * `encrypted = true` 时后端恒下发这个掩码（P1 册 5.3），前端只做**展示与判定**，不解密不改写。
@@ -86,7 +74,9 @@ export function normalizeParamQuery(input = {}) {
  *   不给用户填的机会；
  * - `Up` 必须带 `version`（乐观锁，缺了后端 `up` 直接 10003）；`Add` 传 `null` 让后端自己定；
  * - `paramValue` 原样保留（不 trim）：空串是"保持不变"的既有语义（P1-2 册 331 行），且去掉首尾空白
- *   会悄悄改掉用户写的值；只有 `null/undefined` 归一为空串，避免下发 `null`。
+ *   会悄悄改掉用户写的值；只有 `null/undefined` 归一为空串，避免下发 `null`；
+ * - **不下发 `remark`**：P1-3 册 5.3 的 `ParamSaveCmd` 虽接受该字段，但 `ParamDTO` 没有它
+ *   （册 439 行第 17 条）：读不回来的字段不做"只能写不能读"的入口，页面也不再提供输入框。
  */
 export function normalizeParamSaveCmd(input = {}) {
   const paramLevel = PARAM_LEVELS.includes(input.paramLevel) ? input.paramLevel : 'SYSTEM'
@@ -100,10 +90,6 @@ export function normalizeParamSaveCmd(input = {}) {
   const paramGroup = optional(input.paramGroup)
   if (paramGroup !== undefined) {
     body.paramGroup = paramGroup
-  }
-  const remark = typeof input.remark === 'string' ? input.remark.trim() : input.remark
-  if (remark !== undefined && remark !== '') {
-    body.remark = remark
   }
   const version = Number(optional(input.version))
   body.version = Number.isFinite(version) ? Math.trunc(version) : null
@@ -175,7 +161,7 @@ const CODE_HINTS = Object.freeze({
   [PARAM_DUPLICATED]: '该键在这一级别/归属下已存在（code=20004）',
   [PARAM_BUILTIN_READONLY]: '平台内置参数不可删除（code=20005）',
   [PARAM_SCOPE_INVALID]: '参数归属非法（code=20006）：SYSTEM 级必须 ownerId=0，ORG/USER 级必须大于 0',
-  [FORBIDDEN]: '无权限（code=10403）：按钮隐藏只是体验，后端仍会拒绝，请联系管理员分配权限点',
+  [FORBIDDEN_CODE]: '无权限（code=10403）：后端 @PreAuthorize 是权威，请联系管理员分配权限点',
 })
 
 /** 写动作失败提示。未登记的码回落到"后端 message + code + traceId"，不猜语义。 */
@@ -211,7 +197,6 @@ export function toParamRow(row) {
       paramValue: '',
       valueType: 'STRING',
       paramGroup: null,
-      remark: null,
       version: null,
       id: null,
       builtin: false,
@@ -228,7 +213,6 @@ export function toParamRow(row) {
     paramValue: masked ? '' : (candidate.paramValue ?? ''),
     valueType: candidate.valueType ?? 'STRING',
     paramGroup: candidate.paramGroup ?? null,
-    remark: candidate.remark ?? null,
     version: Math.trunc(Number(candidate.version) || 0),
     id: candidate.id ?? null,
     builtin: candidate.builtin === true,

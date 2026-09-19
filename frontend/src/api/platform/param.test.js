@@ -2,9 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import axios from 'axios'
 
 import { IDEMPOTENCY_KEY_HEADER } from '@/api/codes'
-import { newIdempotencyKey, newIdempotencyScope } from '@/api/idempotency'
+import { newIdempotencyScope } from '@/api/idempotency'
 import { http } from '@/api/request'
-import { clearPermissions, hasPermission, setPermissions } from '@/auth/permissions'
 import {
   PARAM_BUILTIN_READONLY,
   PARAM_DUPLICATED,
@@ -14,8 +13,6 @@ import {
 } from '@/api/platform/paramCodes'
 import {
   MASKED_PARAM_VALUE,
-  PARAM_KEY_MAX_LENGTH,
-  PARAM_PERMISSIONS,
   add,
   del,
   describeWriteFailure,
@@ -170,18 +167,16 @@ describe('ParamSaveCmd 组装（P1 册 5.3）', () => {
   })
 
   it('可选项留空即省略，不塞空串', () => {
-    const body = normalizeParamSaveCmd({ paramGroup: '  ', remark: '' })
+    const body = normalizeParamSaveCmd({ paramGroup: '  ' })
 
     expect(body).not.toHaveProperty('paramGroup')
-    expect(body).not.toHaveProperty('remark')
-    expect(normalizeParamSaveCmd({ paramGroup: ' sms ', remark: ' 备注 ' })).toMatchObject({
-      paramGroup: 'sms',
-      remark: '备注',
-    })
+    expect(normalizeParamSaveCmd({ paramGroup: ' sms ' })).toMatchObject({ paramGroup: 'sms' })
   })
 
-  it('参数键上限与契约一致（128）', () => {
-    expect(PARAM_KEY_MAX_LENGTH).toBe(128)
+  it('不下发 remark：ParamDTO 没有该字段，读不回来的值不做"只能写不能读"的入口（P1-3 册 439 行第 17 条）', () => {
+    const body = normalizeParamSaveCmd({ paramKey: 'k', paramLevel: 'SYSTEM', valueType: 'STRING', remark: ' 备注 ' })
+
+    expect(body).not.toHaveProperty('remark')
   })
 })
 
@@ -219,29 +214,26 @@ describe('列表行 → 编辑器行（定位 Up/Del 的目标行）', () => {
     })
   })
 
-  it('归属 ID 只能来自候选行：ParamWithSourceDTO 没有 ownerId 字段（拿 row.ownerId 会永远匹配不上）', () => {
-    // 这条就是回归点：早先按 row.ownerId 匹配，ORG 行会一个候选都对不上，编辑悄悄退化成新增
+  it('候选匹配只走 sourceLevel，并取同级别里 ownerId 最小者（退回按 row.ownerId 匹配就挂）', () => {
+    // 回归点：`ParamWithSourceDTO` 没有 ownerId 字段（P1 册 5.3）。早先按 row.ownerId 匹配：
+    // 一个候选都对不上（编辑悄悄退化成新增），或错认 SYSTEM 行（ownerId=0）为可写行。
     const rowWithoutOwnerId = {
-      paramKey: 'k',
+      paramKey: 'platform.file.max-size',
       source: 'DB',
       sourceLevel: 'ORG',
-      candidates: [{ id: 3, paramLevel: 'ORG', ownerId: 11, version: 2 }],
-    }
-
-    expect(rowWithoutOwnerId).not.toHaveProperty('ownerId')
-    expect(toParamRow(rowWithoutOwnerId)).toMatchObject({ id: 3, ownerId: 11, version: 2 })
-  })
-
-  it('同键有别的级别的行时不会认错：只取与 sourceLevel 匹配的那一行', () => {
-    const mixed = {
-      ...row,
       candidates: [
         { id: 1, paramLevel: 'SYSTEM', ownerId: 0, version: 1 },
-        { id: 2, paramLevel: 'ORG', ownerId: 3, version: 7 },
+        { id: 3, paramLevel: 'ORG', ownerId: 11, version: 2 },
+        { id: 4, paramLevel: 'ORG', ownerId: 5, version: 9 },
       ],
     }
 
-    expect(toParamRow(mixed)).toMatchObject({ id: 2, ownerId: 3, version: 7 })
+    expect(toParamRow(rowWithoutOwnerId)).toMatchObject({
+      paramLevel: 'ORG',
+      ownerId: 5,
+      id: 4,
+      version: 9,
+    })
   })
 
   it('同级别多条候选时取 ownerId 最小的一条（页面靠展开候选看全部）', () => {
@@ -341,6 +333,21 @@ describe('写动作请求：路径、载荷与幂等键', () => {
     })
   })
 
+  it('Add 下发前把参数键去空白：键是行身份，键上带空白就与后端 DTO 的键对不上', async () => {
+    const captured = stubServer({ id: 1, version: 0 })
+
+    await add({
+      paramKey: '  platform.file.max-size  ',
+      paramLevel: 'SYSTEM',
+      valueType: 'INT',
+      paramValue: '1',
+    })
+
+    expect(captured[0].url).toBe('/platform/param/Add')
+    expect(JSON.parse(captured[0].data).paramKey).toBe('platform.file.max-size')
+    expect(captured[0].headers[IDEMPOTENCY_KEY_HEADER]).toBeTruthy()
+  })
+
   it('Up 带 version（乐观锁），路径为 Up', async () => {
     const captured = stubServer({})
 
@@ -431,11 +438,21 @@ describe('幂等键：同一次提交复用、内容变了换新', () => {
     expect(first.key).not.toBe(second.key)
   })
 
-  it('键格式与 newIdempotencyKey 一致（同一种产物，没有第二套键）', () => {
+  it('同一动作重试复用同一个键、载荷变了换新键：键以请求头落到真实请求上', async () => {
+    const captured = stubServer({ id: 1, version: 0 })
     const scope = newIdempotencyScope()
-    const generated = scope.next({})
+    const payload = { paramKey: 'a', paramValue: '1' }
 
-    expect(generated.key).toHaveLength(newIdempotencyKey().length)
+    const attempt = scope.next(payload)
+    const retry = scope.next({ ...payload })
+    const changed = scope.next({ paramKey: 'a', paramValue: '2' })
+
+    await add(payload, { idempotencyKey: retry.key })
+    await add({ paramKey: 'a', paramValue: '2' }, { idempotencyKey: changed.key })
+
+    expect(retry.key).toBe(attempt.key)
+    expect(captured[0].headers[IDEMPOTENCY_KEY_HEADER]).toBe(attempt.key)
+    expect(captured[1].headers[IDEMPOTENCY_KEY_HEADER]).not.toBe(attempt.key)
   })
 })
 
@@ -474,43 +491,5 @@ describe('Result.code → 用户提示（唯一分支依据，不做中文匹配
     expect(describeWriteFailure({ code: PARAM_BUILTIN_READONLY, message: 'whatever' })).toBe(
       describeWriteFailure({ code: PARAM_BUILTIN_READONLY, message: '系统内置参数不可删除' }),
     )
-  })
-})
-
-describe('权限点驱动渲染（隐藏不是安全边界，只是省一次注定被拒的往返）', () => {
-  beforeEach(() => {
-    clearPermissions()
-  })
-
-  it('权限点与后端 @PreAuthorize 逐字一致（P1 册 7.3）', () => {
-    expect(PARAM_PERMISSIONS).toEqual({
-      list: 'platform:param:list',
-      get: 'platform:param:get',
-      add: 'platform:param:add',
-      up: 'platform:param:up',
-      del: 'platform:param:del',
-      refresh: 'platform:param:refresh',
-    })
-  })
-
-  it('iam 未交付（权限未下发）时一律放行：不硬编码假权限、也不假装权限已生效', () => {
-    expect(hasPermission(PARAM_PERMISSIONS.add)).toBe(true)
-    expect(hasPermission(PARAM_PERMISSIONS.refresh)).toBe(true)
-  })
-
-  it('权限下发后按码判定：没有的码一律隐藏', () => {
-    setPermissions([PARAM_PERMISSIONS.list, PARAM_PERMISSIONS.up])
-
-    expect(hasPermission(PARAM_PERMISSIONS.list)).toBe(true)
-    expect(hasPermission(PARAM_PERMISSIONS.up)).toBe(true)
-    expect(hasPermission(PARAM_PERMISSIONS.add)).toBe(false)
-    expect(hasPermission(PARAM_PERMISSIONS.del)).toBe(false)
-    expect(hasPermission(PARAM_PERMISSIONS.refresh)).toBe(false)
-  })
-
-  it('后端确认"一个权限点都没有"时不再放行（空集合 ≠ 未下发）', () => {
-    setPermissions([])
-
-    expect(hasPermission(PARAM_PERMISSIONS.add)).toBe(false)
   })
 })

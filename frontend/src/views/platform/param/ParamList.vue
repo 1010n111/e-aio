@@ -4,7 +4,6 @@
       <div class="param__header">
         <span>参数管理</span>
         <el-button
-          v-if="canAdd"
           type="primary"
           :disabled="loading"
           @click="openAdd"
@@ -12,7 +11,6 @@
           新增参数
         </el-button>
         <el-button
-          v-if="canRefresh"
           :disabled="loading"
           @click="handleRefreshAll"
         >
@@ -220,7 +218,6 @@
       >
         <template #default="{ row }">
           <el-button
-            v-if="canUp"
             link
             type="primary"
             @click="openEdit(row)"
@@ -228,16 +225,15 @@
             编辑
           </el-button>
           <el-tooltip
-            v-if="canDel"
-            :disabled="!rowEditable(row).builtin"
-            content="平台内置参数不可删除（后端返回 20005）"
+            :disabled="!deleteBlockReason(row)"
+            :content="deleteBlockReason(row)"
             placement="top"
           >
             <span>
               <el-button
                 link
                 type="danger"
-                :disabled="rowEditable(row).builtin"
+                :disabled="!!deleteBlockReason(row)"
                 @click="handleDelete(rowEditable(row))"
               >
                 删除
@@ -245,7 +241,6 @@
             </span>
           </el-tooltip>
           <el-button
-            v-if="canRefresh"
             link
             :disabled="!rowEditable(row).id"
             @click="handleRefreshKey(row)"
@@ -377,14 +372,6 @@
             placeholder="可选"
           />
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input
-            v-model="editor.form.remark"
-            maxlength="255"
-            show-word-limit
-            placeholder="可选"
-          />
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -407,7 +394,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { FORBIDDEN_CODE } from '@/api/codes'
@@ -415,7 +402,6 @@ import { newIdempotencyScope } from '@/api/idempotency'
 import {
   PARAM_KEY_MAX_LENGTH,
   PARAM_LEVELS,
-  PARAM_PERMISSIONS,
   PARAM_VALUE_TYPES,
   add,
   del,
@@ -426,7 +412,6 @@ import {
   toParamRow,
   up,
 } from '@/api/platform/param'
-import { hasPermission } from '@/auth/permissions'
 
 /** 覆盖优先级 USER > ORG > SYSTEM（P1 册 3.1.1）；DTO 未冻结 candidates 顺序，故前端显式排。 */
 const LEVEL_RANK = { USER: 0, ORG: 1, SYSTEM: 2 }
@@ -435,13 +420,11 @@ const LEVEL_RANK = { USER: 0, ORG: 1, SYSTEM: 2 }
 const SOURCE_TAG_TYPE = { DEFAULT: 'info', YAML: 'warning', DB: 'success' }
 
 /**
- * 权限点驱动渲染（P1 册 7.3）。隐藏按钮**不是**安全边界：后端按 `Result.code` 判定，
- * 这里只省一次注定被拒的往返；iam 未交付时权限未知 → 一律放行（见 `@/auth/permissions`）。
+ * 删除不可用的两类原因：文案只写一处，按钮 tooltip 与点击守卫共用，避免两处漂移。
+ * 必须分开说——DEFAULT/YAML 来源根本没有数据库行（`!id`），把它说成"内置"是误导（评审点 2）。
  */
-const canAdd = computed(() => hasPermission(PARAM_PERMISSIONS.add))
-const canUp = computed(() => hasPermission(PARAM_PERMISSIONS.up))
-const canDel = computed(() => hasPermission(PARAM_PERMISSIONS.del))
-const canRefresh = computed(() => hasPermission(PARAM_PERMISSIONS.refresh))
+const DELETE_NO_ROW_HINT = '该参数没有可删除的行（当前值来自默认值或配置文件）'
+const DELETE_BUILTIN_HINT = '平台内置参数不可删除（后端返回 20005）'
 
 const form = reactive({ paramKey: '', paramLevel: null, ownerId: null, paramGroup: '' })
 const page = reactive({ pageNum: 1, pageSize: 20, total: 0 })
@@ -506,7 +489,8 @@ function emptyEditorForm() {
     paramValue: '',
     valueType: 'STRING',
     paramGroup: '',
-    remark: '',
+    // 不提供"备注"：`ParamDTO` 没有 remark（P1-3 册 5.3 / 册 439 行第 17 条），
+    // 读不回来的字段做成"只能写不能读"的入口只会让用户看不到当前值。
   }
 }
 
@@ -522,6 +506,18 @@ function isJson(text) {
 /** 列表行 → 编辑器行（含 `id`/`version`/`builtin`；无 DB 行时为 null，走 Add）。 */
 function rowEditable(row) {
   return toParamRow(row)
+}
+
+/** 删除按钮不可用的原因（空串 = 可删）：`!id` 与 `builtin` 是两回事，分别给文案。 */
+function deleteBlockReason(row) {
+  const target = rowEditable(row)
+  if (!target.id) {
+    return DELETE_NO_ROW_HINT
+  }
+  if (target.builtin) {
+    return DELETE_BUILTIN_HINT
+  }
+  return ''
 }
 
 function orderCandidates(candidates) {
@@ -625,7 +621,6 @@ function openEdit(row) {
     paramValue: target.paramValue ?? '',
     valueType: target.valueType,
     paramGroup: target.paramGroup ?? '',
-    remark: target.remark ?? '',
   }
   editor.visible = true
 }
@@ -663,10 +658,17 @@ async function handleSave() {
   }
 }
 
-/** 删除：带 `{id, version}`（乐观锁），二次确认；内置参数按钮已禁用，这里再拦一道。 */
+/**
+ * 删除：带 `{id, version}`（乐观锁），二次确认。按钮已按 `deleteBlockReason` 禁用，这里再拦一道：
+ * 无行（DEFAULT/YAML）与内置（builtin）分开提示，别把"没有行"说成"内置"。
+ */
 async function handleDelete(target) {
-  if (!target?.id || target.builtin) {
-    ElMessage.warning('平台内置参数不可删除（后端返回 20005）')
+  if (!target?.id) {
+    ElMessage.warning(DELETE_NO_ROW_HINT)
+    return
+  }
+  if (target.builtin) {
+    ElMessage.warning(DELETE_BUILTIN_HINT)
     return
   }
   try {
