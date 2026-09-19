@@ -114,7 +114,7 @@ related:
 2. `docs/03-企业级一体化管理系统-e-aio-概要设计说明书.md`（HLD V1.1）
 3. `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P0-工程地基.md`（P0 册，契约与工程地基权威）
 4. `docs/04-企业级一体化管理系统-e-aio-详细设计说明书-P1-平台底座.md`（同批次兄弟册，platform 契约）
-5. `docs/adr/0001-unified-post-and-always-200-result-contract.md`、`docs/adr/0002-per-module-schema-and-flyway-instance.md`
+5. `docs/adr/0001-unified-post-and-always-200-result-contract.md`、`docs/adr/0002-per-module-schema-and-flyway-instance.md`、`docs/adr/0003-protocol-endpoint-exceptions.md`、`docs/adr/0004-cross-schema-readonly-predicate.md`
 6. `docs/agents/{architecture,api-conventions,database,java-conventions,frontend-conventions,build-and-test}.md`
 7. `CONTEXT.md`（领域词汇表）
 8. 既有代码实测：`e-aio-common`（`Result`/`PageResult`/`ErrorCode`/`BusinessErrorCode`/`IdempotencyStore`/`IdGenerator`/`JsonUtils`/`DateUtils`/`StringUtils`/`SensitiveUtils` 等）、`e-aio-app/web`（`TraceIdFilter` order = `Ordered.HIGHEST_PRECEDENCE`、`IdempotencyFilter` order = `Ordered.HIGHEST_PRECEDENCE + 20`，装配于 `WebConfig`）、`e-aio-app/config`（`ModuleFlywayProperties`：`locationOf(m) = classpath:db/migration/<m>`、`schemaOf(m) = eaio_<m>`）、`application.yml`（`eaio.flyway.modules: [platform]`）、`ArchitectureTest`（10 个 `@Test`，唯一架构落点）
@@ -295,10 +295,10 @@ package com.eaio.iam;
 | I-4 | 表名形态 | 本册原始指令为 snake_case **复数**（`users`/`org_nodes`/`auth_sessions`）；批次总册 3.5 与 P1 platform 册裁决 C-13/C-14 为**单数** | **采用 snake_case 单数、模块内无前缀**（`org_node`、`role`、`auth_session`）；**用户主档例外用 `sys_user`**（PG 保留字 `user`） | 批次一致优先（两册并存不得漂移）；`sys_user` 是保留字硬约束下的必有例外。若评审要求复数，改名是机械操作（唯一真源在 4.3 DDL） |
 | I-5 | 认证形态 | platform 册裁决 C-9：M2–M5 只做资源服务器 JWT 校验 + 自建登录端点，OAuth2 Authorization Server 留 P3 | **采用同进程自托管 OAuth2 Authorization Server**（M2–M5 落地） | 指令与 HLD 5.2 一致（HLD 优先于分册裁决）；代价：M2 需多接 `spring-security-oauth2-authorization-server`，见 5.6 |
 | I-6 | `TenantCtx` 归属 | platform 册 2.7：`TenantCtx` + `TenantContextHolder` 归 `com.eaio.common.context`（common 承载、iam 填充） | **接口 `TenantCtxProvider` 在 `com.eaio.iam.api`、实现在 iam** | 指令冻结；`TenantCtx` 需要读 `user_org`/`org_node`（业务数据，common 不得含业务逻辑），放 common 会让 common 反向依赖业务语义。环打破见 2.4.3 |
-| I-7 | 协议端点方法与恒 200 | ADR-0001 / api-conventions：全部接口 POST + JSON、HTTP 恒 200 | **业务接口不变；OAuth2/SAML2 协议端点按协议为 GET/302 与 `application/x-www-form-urlencoded`** | 协议强制，无法改写。需在 P1 评审把「协议端点」补登记为 ADR-0001 的第三类例外（与"文件上传下载"并列），列入 7.6 遗留 L-2 |
+| I-7 | 协议端点方法与恒 200 | ADR-0001 / api-conventions：全部接口 POST + JSON、HTTP 恒 200 | **业务接口不变；OAuth2/SAML2 协议端点按协议为 GET/302 与 `application/x-www-form-urlencoded`** | 协议强制，无法改写。已登记为 **[ADR-0003](adr/0003-protocol-endpoint-exceptions.md) 协议端点例外**（OAuth2/SAML2/文件流封闭清单 + 逐路径登记到 `api-conventions.md` + 前端不套 `Result`） |
 | I-8 | `PermissionAuditApi` 归属 | 指令列在 `com.eaio.iam.api` 清单下，同时要求"audit 落库、iam 不自建审计表" | **接口放 `com.eaio.audit.api`**（audit 侧契约），iam 可选注入 | 若放 iam 则 audit 必须依赖 iam 才能实现，且 iam 将被迫自建审计落库路径；两处措辞冲突时取"audit 落库"语义。若评审要求归属 iam，等价改法是接口放 `com.eaio.iam.api` + audit 侧适配器（依赖方向 audit → iam） |
-| I-9 | iam 错误码具体号 | P1 platform 册 4.7 已按 `21100–21146` 分配 iam 错误码；批次总册 6.1 只登记段 `21000–21999` | **本册按指令采用 `21001–21092` 号表**（表 7-1），platform 册 4.7 的 21100 段**建议作废或平移**；7.1 附注给出逐条映射 | 号段的**段**由批次总册冻结、**号**冲突时以模块分册（本册）为 iam 唯一号源；同段内两套号并存会让前端与文档双写。代价：platform 册需一次小修订 |
-| I-10 | 数据权限是否允许跨 Schema 谓词 | P1 platform 册 C-22：**不跨 Schema**，只生成 `orgColumn IN (:orgIds)`，超 2000 报 `21120` | **分档处理**：≤2000 内联 `= ANY(ARRAY[...])`（不跨 Schema）；2001–20000 退化为 `EXISTS (SELECT 1 FROM eaio_iam.org_node_path …)`（**跨 Schema 只读谓词例外**，需评审登记）；>20000 fail-closed `1=0` + 告警（错误码 `21037`） | 指令要求"大 IN 退化 EXISTS 子查询"，parent 同步亦确认；纯内联在万级组织下 SQL 文本与解析成本不可控。例外仅限 iam 注入的谓词、只读、单表、走 `idx_org_node_path_descendant`，见 3.6.4 |
+| I-9 | iam 错误码具体号 | P1 platform 册 4.7 已按 `21100–21146` 分配 iam 错误码；批次总册 6.1 只登记段 `21000–21999` | **本册按指令采用 `21001–21092` 号表**（表 7-1），platform 册 4.7 的 21100–21146 段**已作废并改为指向本册**（裁定：本册为 iam 唯一号源）；7.1 附注保留逐条映射供核对 | 号段的**段**由批次总册冻结、**号**冲突时以模块分册（本册）为 iam 唯一号源；同段内两套号并存会让前端与文档双写。代价：platform 册需一次小修订 |
+| I-10 | 数据权限是否允许跨 Schema 谓词 | P1 platform 册 C-22：**不跨 Schema**，只生成 `orgColumn IN (:orgIds)`，超 2000 报 `21120` | **分档处理**：≤2000 内联 `= ANY(ARRAY[...])`（不跨 Schema）；2001–20000 退化为 `EXISTS (SELECT 1 FROM eaio_iam.org_node_path …)`（**跨 Schema 只读谓词例外，已批准**）；>20000 fail-closed `1=0` + 告警（错误码 `21037`） | 指令要求"大 IN 退化 EXISTS 子查询"，parent 同步亦确认；纯内联在万级组织下 SQL 文本与解析成本不可控。例外已落 **[ADR-0004](adr/0004-cross-schema-readonly-predicate.md)**：封闭清单（仅 `eaio_iam.org_node_path`/`org_node` 的只读 `EXISTS`）、应用角色只授列级 `SELECT`、注入点唯一在 iam 的 `DataPermissionInterceptor`；实现细节见 3.6.4 |
 | I-11 | 口令哈希算法 | P1 platform 册 4.8 写 `bcrypt` 校验 | **Argon2id 为默认**（`{argon2}` 前缀），BCrypt 作为兼容升级位（`{bcrypt}` 登录时透明 rehash） | 指令冻结；SRS NFR-SEC-02 只要求"加密存储"，算法以指令为准 |
 | I-12 | 逻辑删除列类型 | P1 platform 册 5.1.6：布尔用 `SMALLINT`（0/1），不用 PG `boolean` | **采用 `BOOLEAN NOT NULL DEFAULT false`**（部分唯一索引用 `WHERE deleted = false`） | 指令冻结；PG 原生类型语义清晰。代价：与 platform 册不一致，需在 P1 收口时二选一并同步 `database.md`（7.6 L-1） |
 | I-13 | 迁移脚本首个文件名 | 批次总册 6.3 表登记 iam 为 `V1__init.sql` | **`V1__baseline.sql`**（与 platform 的 `V1__baseline.sql` 命名一致，且 V1 只建 Schema 不建业务表，见 4.4） | 命名一致性；内容约束沿用 ADR-0002 第 4 条与 platform 基线脚本的注释头 |
@@ -932,7 +932,7 @@ MybatisPlusInterceptor iamMybatisPlusInterceptor(DataScopeSqlHandler handler) {
 | 组织范围 2001–20000（**降级 EXISTS**） | `AND (EXISTS (SELECT 1 FROM eaio_iam.org_node_path p WHERE p.descendant_id = t.org_id AND p.ancestor_id = ANY(ARRAY[...上溯的共同祖先...])))` |
 | 组织范围 > 20000 | `AND (1 = 0)` + ERROR 告警（`21037`），提示改用部门级授权或引入公司冗余列 |
 
-**`EXISTS` 降级是第一类例外，必须登记**：它让业务模块的 SQL 出现一个**只读、单表、跨 Schema** 的子查询，与 CONTEXT「禁止跨 Schema 关联查询」字面冲突（见 2.4.4 I-10）。约束：① 仅 iam 注入，业务代码不得手写；② 只读 `eaio_iam.org_node_path`；③ 必须命中 `idx_org_node_path_descendant`；④ 每次使用写 DEBUG 日志（含行数估算）以便观测使用面。
+**`EXISTS` 降级是已登记的封闭例外（[ADR-0004](adr/0004-cross-schema-readonly-predicate.md)）**：它让业务模块的 SQL 出现一个**只读、单表、跨 Schema** 的子查询，与 CONTEXT「禁止跨 Schema 关联查询」字面冲突（见 2.4.4 I-10）。ADR-0004 的封闭清单**只含 `eaio_iam.org_node_path` 与 `org_node` 的只读 `EXISTS`**，且应用角色对这两个对象只授列级 `SELECT`；约束：① 仅 iam 注入，业务代码不得手写；② 只读 `eaio_iam.org_node_path`；③ 必须命中 `idx_org_node_path_descendant`；④ 每次使用写 DEBUG 日志（含行数估算）以便观测使用面。
 
 **安全边界**：`getSqlSegment` 返回的是**拼接进 SQL 的字符串**，因此片段里**只能出现经 `Long` 白名单校验后 `toString()` 的数字**与固定列名（来自 `data_scope_resource` 登记值，不是请求参数）——**绝不允许**任何用户输入进入片段（NFR-SEC-07 防注入）。列名在装配时校验：`^[a-z][a-z0-9_]{0,62}$`，否则启动失败。
 
@@ -2672,7 +2672,7 @@ P0 已有 10 个 `@Test`（模块边界、命名接口、模块登记、common �
 | 21092 | `FIELD_DECRYPT_FAILED` | 字段解密失败（密钥缺失或版本不匹配） | 不返回空值（3.2.5） |
 | 21093–21999 | *（留空）* | — | 本册未分配，供 iam 后续演进与 P2–P3 使用 |
 
-**与 P1 platform 册 4.7（21100–21146）的映射**（I-9：建议以本册为 iam 唯一号源，platform 册作废或平移）：
+**与 P1 platform 册 4.7（21100–21146）的映射**（I-9：**已裁定以本册为 iam 唯一号源**，platform 册 4.7 的 21100 段已作废并改为指向本册；下表保留供一致性核对）：
 
 | platform 册 | 本册 | platform 册 | 本册 |
 |---|---|---|---|
@@ -2759,12 +2759,14 @@ P0 已有 10 个 `@Test`（模块边界、命名接口、模块登记、common �
 | ⑦ ArchUnit「模块登记完备」「业务错误码落段」断言 | ✅ 本册要求：A1/A2 + A3–A10 共 10 条新增断言，M2 起生效（含控制组） | 6.3 |
 | ⑧ `eaio.idempotency.fail-open` 评估 | ⏭ 维持 P0 决策：恒 fail-closed，不加开关；iam 侧新增的"会话校验/验证码校验"同样 fail-closed（3.4.6） | 3.3.8、3.4.6 |
 
+> **另两条已登记例外（不属于 P0 册 6.3 清单，但影响本册实现）**：① 协议端点例外 → **ADR-0003**（本册 5.2 第 45/46 行、5.6 按其封闭清单实现）；② 跨 Schema 只读谓词例外 → **ADR-0004**（本册 3.6.4 的 2001–20000 档 `EXISTS` 降级，封闭清单只含 `eaio_iam.org_node_path`/`org_node` 只读 `EXISTS` + 列级 `SELECT` 授权）。
+
 ### 7.6 遗留与后续分册承接
 
 | 编号 | 遗留项 | 影响 | 承接 |
 |---|---|---|---|
 | L-1 | 审计列名与 `common.persistence.BaseDO` 不一致（本册 `created_at/…` vs platform 册裁决的 `create_time/…`；逻辑删除列 `BOOLEAN` vs `SMALLINT`） | 两册并存时 DO 基类需二选一；iam 在 M2 先用自有 `IamBaseDO`，不阻塞 | P1 收口评审：统一后同步 `database.md` 与 P0 册 4.4（见 2.4.4 I-1/I-12） |
-| L-2 | OAuth2/SAML2 协议端点与 ADR-0001「全部 POST + JSON + 恒 200」冲突 | 需在 ADR-0001 补登"协议端点例外"（第三类例外，与文件上传下载并列） | P1 评审 → ADR-0001 修订（本册不改 ADR） |
+| L-2 | OAuth2/SAML2 协议端点与 ADR-0001「全部 POST + JSON + 恒 200」冲突 | 需在 ADR-0001 补登"协议端点例外"（**已登记为 [ADR-0003](adr/0003-protocol-endpoint-exceptions.md)**：OAuth2/SAML2/文件流封闭清单 + 逐路径登记到 `api-conventions.md` + 前端不套 `Result`） | P1 评审 → ADR-0001 修订（本册不改 ADR） |
 | L-3 | 密钥管理（KMS/HSM）未引入：P1 为"环境变量/参数中心注入 + 手工轮换" | 密钥轮换需重启加载（`JwtKeyProvider` 支持双 kid 热切换；字段密钥轮换走 `iam.field.rekey` 任务） | P3 评估 KMS（SRS NFR-SEC-02 的长期口径） |
 | L-4 | 短信 MFA 未实现（只 TOTP） | FR-SEC-02 的"短信"通道缺失 | P2/P3 随 `integration`（短信通道）+ `NoticeApi` 落地；`sys_user` 无需改表（新增 `user_mfa_factor` 表即可） |
 | L-5 | SAML2 依赖真实 IdP 与证书环境验证 | M5 交付时若环境未就绪，只能交付单元/内嵌 IdP 验证 | M5 评审确认；必要时顺延到 M6（需在批次内登记，不静默延期） |
