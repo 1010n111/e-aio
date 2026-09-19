@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.eaio</groupId>
+    <artifactId>e-aio</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>e-aio-common</artifactId>
+  <name>e-aio-common</name>
+  <description>通用能力层：契约（返回体/分页/错误码/异常）与工具门面；不依赖任何模块，不引 Web 与持久层</description>
+
+  <!-- 纯净性约束（P0 册 3.7）：本模块不得依赖任何 com.eaio.&lt;module&gt;、不得引用 Web 与持久层类型 -->
+  <dependencies>
+  </dependencies>
+</project>

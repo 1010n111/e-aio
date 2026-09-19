@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: e-aio
+  profiles:
+    # 默认不激活任何 profile：不连数据库、不连 Redis，应用可直接启动（P0 验收：无依赖启动）
+    default: ""
+
+# 数据源与 Redis 只在 local profile 声明：
+# 基础配置里不出现连接信息，避免"空应用可启动"与"必须有一个数据库"互相矛盾（P0 册 3.5.2）。
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eaio
+    username: eaio
+    password: eaio
+  data:
+    redis:
+      host: localhost
+      port: 6379

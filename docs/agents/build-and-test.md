@@ -26,6 +26,14 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL **17**�
 
 本机没装 Docker（或不想起 compose）时：`mvn -B verify -DskipITs`（跳过 Testcontainers 集成测试）即可完成编译/单测/架构测试；本地空应用启动把 `eaio.flyway.enabled` 设为 `false`（见 P0 册 3.5.2）——**迁移路径的权威验证在 CI**（阶段 5），因此提交含 Flyway 脚本的改动前，注意本地绿不等于 CI 绿。
 
+## 离线/受限网络下的本地验证（例外路径，不改变 CI 基线）
+
+网络不可用或本地仓库只读时，可用已缓存 artifact 做**局部**验证，基线本身不变（父 POM 仍锁 4.1.x）：
+
+- 命令加 `-o`（离线）与临时 `-s <settings>`（把仓库 id `public` 与 `central` 同时放进上下文，否则本地仓库中 `_remote.repositories` 记为 `public=` 的 artifact 会被判为"需重新下载"）；
+- 本地缓存里通常只有 4.1.0 而没有最新补丁版，此时**临时**把父 POM 版本改成 4.1.0 验证，验证完必须改回——**不要提交该改动**；
+- 该路径只能证明"代码与装配正确"，**不构成**对 CI 基线的验证：`actuator`、`modulith`、`logstash-logback-encoder`、`archunit-junit5`、`testcontainers` 等若不在缓存中，相关票在本机无法端到端验证，须在报告中如实标注（"本地未验证，权威在 CI"）。
+
 ## 质量门（PR 必须全绿）
 
 | 门 | 内容 | 阻断 |

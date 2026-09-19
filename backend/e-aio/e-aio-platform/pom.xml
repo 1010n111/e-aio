@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.eaio</groupId>
+    <artifactId>e-aio</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>e-aio-platform</artifactId>
+  <name>e-aio-platform</name>
+  <description>平台支撑模块：P0 仅承载平台自有迁移脚本（classpath:db/migration/platform），无业务代码</description>
+
+  <!--
+    P0 无业务代码、无依赖。迁移基线 V1__baseline.sql 随 T3 落位：
+    脚本只允许 Schema 与注释，不含业务表；P1 平台迁移自 V2__ 起连续编号。
+  -->
+  <dependencies>
+  </dependencies>
+</project>
