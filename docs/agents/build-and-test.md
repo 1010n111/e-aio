@@ -22,13 +22,17 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL **17**�
 
 `docker compose up -d postgres redis`。仓库当前尚无 `docker-compose.yml`（P0 交付物），该命令在交付后生效。`postgres` 服务使用 `pgvector/pgvector:pg17`，初始化脚本执行 `CREATE EXTENSION IF NOT EXISTS vector`（报表/AI 向量检索在 P1 使用，P0 只保证环境零改动）。
 
+## 无 Docker 时的降级路径
+
+本机没装 Docker（或不想起 compose）时：`mvn -B verify -DskipITs`（跳过 Testcontainers 集成测试）即可完成编译/单测/架构测试；本地空应用启动把 `eaio.flyway.enabled` 设为 `false`（见 P0 册 3.5.2）——**迁移路径的权威验证在 CI**（阶段 5），因此提交含 Flyway 脚本的改动前，注意本地绿不等于 CI 绿。
+
 ## 质量门（PR 必须全绿）
 
 | 门 | 内容 | 阻断 |
 |---|---|---|
 | 编译 | `mvn -B compile` | ✅ |
 | Lint | 后端 `mvn -B checkstyle:check` + 前端 `npm run lint`（ESLint）（NFR-OSS-03） | ✅ |
-| 单元测试 | `mvn -B test`；common 工具核心覆盖率 100%，整体 ≥ 80% | ✅ |
+| 单元测试 | `mvn -B test`；**可执行核心**（`Result`/`PageResult`/`ErrorCode`/异常/`JsonUtils`/`SensitiveUtils`/`DateUtils` 等，名单见 P0 册 4.8）100%，其余不设阈值；"整体 ≥ 80%"自 P1 有业务代码起生效 | ✅ |
 | 架构测试 | ArchUnit（模块边界 / 依赖单向 / 五层分包）+ `ApplicationModules.verify()` | ✅ |
 | 集成测试 | Testcontainers（PostgreSQL + Redis）跑 `@SpringBootTest`、Flyway 空库迁移 | ✅ |
 | 安全扫描 | License 扫描（CI）；**OWASP Dependency-Check 属 P1**（P0 依赖面小、无认证代码） | ✅（License） |

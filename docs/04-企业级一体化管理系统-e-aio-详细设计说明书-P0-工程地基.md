@@ -476,10 +476,13 @@ eaio:
 | 脚本位置 | 各模块自带 `src/main/resources/db/migration/<module>/`（[database.md](agents/database.md)）；单个可执行 Jar 内全部在 classpath，按实例 locations 隔离 |
 | 命名规范 | `V<版本>__<描述>.sql`（模块内递增）；可重复迁移 `R__<描述>.sql`（checksum 变化时重跑，仅用于视图/函数/种子） |
 | Schema 管理 | Flyway `create-schemas=true` 依据 `schemas` 自动创建 `eaio_<module>`；脚本内对象一律显式 schema 限定，**禁止跨 Schema DDL/查询**（[database.md](agents/database.md)） |
+| 数据库权限 | **本地/CI**：Testcontainers 以超管运行，验证"应用可建 Schema"这条路径本身可用（`create-schemas=true` 生效）；**生产**：由 DBA 预建 `eaio_<module>` 并授权应用角色，部署清单含该步骤（[database.md](agents/database.md)）。P0 不引入独立迁移账号、不写初始化存储过程 |
 | P0 内容 | 仅登记 `platform → eaio_platform`；脚本 `e-aio-app/src/main/resources/db/migration/platform/V1__baseline.sql`（基线占位，**不含任何业务表 DDL**）。其余模块 Schema 由 P1 起各自迁移脚本创建；platform 后续脚本自 `V2__` 连续编号 |
 | 种子数据 | P0 不注入业务种子（无表可写）；系统参数/字典/角色/流程模板等种子随 platform、iam 在 P1 各自迁移脚本注入 |
 
 > **被否决的备选**：单实例 + `schemas=eaio_platform,eaio_iam,…` + `default-schema`——配置最少，但版本号全局共享、脚本需靠 `search_path` 切换，模块无法独立演进，与 HLD 13.1"可插拔演进"冲突。
+>
+> **语言策略（第六轮裁决）**：错误消息、日志、界面提示**全中文**且不由 message 承载唯一语义（前端与排障都按 `code` 判定）；i18n（语言包 + `Accept-Language`）**留 P1**——P0 无页面、无认证，提前铺 key 只会冻结错误的 message 结构。
 
 ### 3.7 ArchUnit 质量门
 
@@ -776,15 +779,19 @@ public class RateLimiter {
 
 ### 4.8 common 单元测试要求
 
+**覆盖率口径（第六轮裁决）**：只对**可执行核心**要求 100% 行/分支覆盖（下表单列目标）；其余工具类与 P0 骨架不设阈值。P0 只有 common 有实现代码，全局百分比对空壳无意义——**"整体 ≥ 80%"留给 P1+ 有业务代码时生效**（[build-and-test.md](agents/build-and-test.md)）。
+
 | 被测对象 | 测试要点 | 覆盖率目标 |
 |----------|----------|-----------|
+| `Result` / `PageResult` / `ErrorCode` | 静态工厂、traceId 填充、分段数值唯一 | **100%** |
+| `BusinessException` / `SystemException` | 构造与错误码传递 | **100%** |
+| `JsonUtils` | 序列化/反序列化、日期与时区、null 策略、集合与泛型 | **100%** |
+| `SensitiveUtils` + `@Sensitive` | 各类型脱敏规则、边界（空值/短串）、序列化器生效 | **100%** |
+| `DateUtils` / `StringUtils` / `ConvertUtils` | 边界与异常输入 | **100%** |
 | `IdGenerator` | 唯一性（并发 1000）、格式、时钟回拨 | 关键路径 100% |
-| `JsonUtils` | 序列化/反序列化、日期格式、null 策略 | ≥ 90% |
-| `SensitiveUtils` | 各类型脱敏规则、边界（空值/短串） | 100% |
 | `TreeUtils` | 构建/展平、环与孤儿节点处理 | ≥ 90% |
-| `ExcelKit` | 10 万行导出内存、导入错误定位、模板导出 | 集成测试覆盖 |
-| `RedisKit` / `DistributedLock` / `RateLimiter` | 互斥重建、锁竞争、TTL、限流 | Testcontainers Redis |
-| `Result`/`ErrorCode` | 静态工厂、traceId 填充 | 100% |
+| `ExcelKit` | 10 万行导出内存、导入错误定位、模板导出 | 集成测试覆盖（P1 随 platform 使用） |
+| `RedisKit` / `DistributedLock` / `RateLimiter` | 互斥重建、锁竞争、TTL、限流 | **P1**（Redis 实现随后端引入；届时以 Testcontainers Redis 覆盖） |
 
 ---
 
@@ -794,7 +801,7 @@ public class RateLimiter {
 
 | 层级 | 范围 | 工具 | 验收门槛 |
 |------|------|------|----------|
-| 单元测试 | common 工具、异常、返回体 | JUnit 5 + AssertJ | 覆盖率 ≥ 80%（工具核心 100%） |
+| 单元测试 | common 工具、异常、返回体 | JUnit 5 + AssertJ | 可执行核心 100%（4.8 口径），其余不设阈值 |
 | 架构测试 | Modulith 边界、依赖方向 | ArchUnit | 0 违例 |
 | 集成测试 | 应用启动、Flyway 迁移、Redis 连接 | Testcontainers + @SpringBootTest | 全绿 |
 | 契约测试 | `Result<T>`/`PageResult<T>` 序列化 + `traceId` 回填 | JUnit 5 + Jackson（P0）；Spring Cloud Contract 或等价方案 P1 评估（Boot 4 兼容性待验证） | 全绿 |
@@ -806,7 +813,9 @@ public class RateLimiter {
 | 工程骨架 CI 绿灯 | GitHub Actions 全阶段通过 |
 | ArchUnit 验证通过 | `ApplicationModules.verify()` + 自定义规则 0 违例 |
 | Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功：`eaio_platform` 骨架 Schema 自动创建、`flyway_schema_history` 落位、`V1__baseline.sql` 版本 = 1（P0 无业务表；其余模块 Schema 由 P1 各自脚本创建） |
-| common 全部工具单测通过 | 第 4.8 节测试清单全绿，覆盖率达标 |
+| common 全部工具单测通过 | 第 4.8 节测试清单全绿，可执行核心 100%（4.8 口径） |
+| 前端壳可运行 | `npm run build` + `npm run lint` 通过；路由壳可渲染；`request.js` 单测通过（POST 拼接 / 幂等键入头 / 按 `code` 判定 10401 跳登录 / `code!==0` reject）——**P0 不做真实业务页面**（第六轮裁决） |
+| 启动文档可用 | README 快速启动段可在**有 Docker**（compose 起 PG/Redis）与**无 Docker**（`mvn -B verify -DskipITs` + `eaio.flyway.enabled=false`）两种环境下走通；命令区与 `AGENTS.md` 一致 |
 
 ### 5.3 里程碑交付（对齐可研 7.1 阶段 0）
 
@@ -882,4 +891,4 @@ public class RateLimiter {
 | 版本 | 日期 | 主要修订 |
 |------|------|----------|
 | V1.1 | 2026-09-19 | P0 阶段审核修订初版 |
-| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）；⑨ 第五轮：幂等校验不可用 fail-closed（新增 `10502`，3.2.5/6.1）、`ErrorCode` 定为枚举 + `BusinessErrorCode` 接口 + 分段断言（3.2.3）、P0 架构测试只上可执行规则集（3.7/6.3）、`.env.example` + `.gitignore` 忽略 `.env`（3.8）。 |
+| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动；⑧ 第四轮：Modulith 模块侧登记 + ArchUnit 断言（3.1.3/3.7）、附录 6.1 扩为模块登记表（错误码段/Schema 单一事实来源）、前端 P0 最小壳与认证失败唯一落点（3.9.1/3.9.2）、`/api/<module>/<resource>/<Action>` 路径段、CI 运行环境与 compose 形态（3.8）；⑨ 第五轮：幂等校验不可用 fail-closed（新增 `10502`，3.2.5/6.1）、`ErrorCode` 定为枚举 + `BusinessErrorCode` 接口 + 分段断言（3.2.3）、P0 架构测试只上可执行规则集（3.7/6.3）、`.env.example` + `.gitignore` 忽略 `.env`（3.8）；⑩ 第六轮：数据库权限模型（本地/CI 超管验证建 Schema、生产 DBA 预建，3.6/database.md）、全中文 + i18n 留 P1（3.6）、覆盖率只卡可执行核心（4.8/5.1）、启动文档含无 Docker 降级路径（5.2/build-and-test.md）。 |
