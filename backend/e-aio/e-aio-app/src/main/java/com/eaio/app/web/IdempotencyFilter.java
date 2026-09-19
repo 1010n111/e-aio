@@ -1,11 +1,15 @@
 package com.eaio.app.web;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 import com.eaio.common.api.ErrorCode;
 import com.eaio.common.api.IdempotencyStore;
+import com.eaio.common.api.Result;
 import com.eaio.common.exception.IdempotencyUnavailableException;
+import com.eaio.common.exception.JsonException;
+import com.eaio.common.json.JsonUtils;
 import com.eaio.common.redis.RedisKeys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -16,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingResponseWrapper;
 
 /**
  * 幂等键拦截（P0 册 3.2.5）。
@@ -103,19 +108,53 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             return;
         }
 
+        ContentCachingResponseWrapper cached = new ContentCachingResponseWrapper(response);
         boolean failed;
         try {
-            chain.doFilter(request, response);
-            failed = response.getStatus() >= HttpServletResponse.SC_BAD_REQUEST;
+            chain.doFilter(request, cached);
+            failed = !successful(cached);
         } catch (ServletException | IOException | RuntimeException e) {
             release(placeholder, request);
+            try {
+                cached.copyBodyToResponse();
+            } catch (IOException copyFailure) {
+                e.addSuppressed(copyFailure);
+            }
             throw e;
         }
+        cached.copyBodyToResponse();
 
         if (failed) {
             release(placeholder, request);
         } else {
             store.complete(placeholder);
+        }
+    }
+
+    /**
+     * 业务是否成功：读**响应体里的 {@code code}**，而不是 HTTP 状态码。
+     *
+     * <p>理由：本工程 HTTP 恒 200（ADR-0001，{@code WebConfig.writeEnvelope} 也显式设 200），按状态码判定
+     * 会把"业务失败"记成 DONE，调用方带着同一个幂等键重试永远拿到 10501——失败从此不可重试。本类的契约是
+     * "业务失败立即释放占位"，所以失败判据必须是响应体的 code。
+     *
+     * <p>响应体不是统一返回体（空体/非 JSON/传输层失败）时退回 HTTP 状态码判定，并留 WARN：那说明有别的东西
+     * 在写这个响应，读不出业务结果就只能按传输层结果算。
+     */
+    private static boolean successful(ContentCachingResponseWrapper response) {
+        if (response.getStatus() >= HttpServletResponse.SC_BAD_REQUEST) {
+            return false;
+        }
+        byte[] body = response.getContentAsByteArray();
+        if (body.length == 0) {
+            return true;
+        }
+        try {
+            Result<?> result = JsonUtils.fromJson(new String(body, StandardCharsets.UTF_8), Result.class);
+            return result != null && result.successful();
+        } catch (JsonException e) {
+            log.warn("响应体不是统一返回体，幂等结果按 HTTP 状态码判定：status={}", response.getStatus());
+            return true;
         }
     }
 

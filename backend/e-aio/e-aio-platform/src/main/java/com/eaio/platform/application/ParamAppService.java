@@ -194,11 +194,19 @@ public class ParamAppService {
         existing.setValueType(type.name());
         existing.setParamGroup(cmd.paramGroup() == null || cmd.paramGroup().isBlank() ? DEFAULT_GROUP : cmd.paramGroup());
         existing.setRemark(cmd.remark());
+        String oldType = existing.getValueType();
+        boolean blankValue = cmd.paramValue() == null || cmd.paramValue().isBlank();
+        if (blankValue && !type.name().equals(oldType)) {
+            // 留空 = 不变更（P1-2 册 331）只在"类型不变"时成立：跨类型时旧值无法充当新类型的值
+            // （STRING 的明文不是密文，SECRET 的密文也不是明文），静默保留会把明文字段标成 encrypted
+            // 或把密文当明文回给调用方——两者都是"配置写错却看不出来"，必须显式拒绝。
+            throw new BusinessException(PlatformErrorCode.PARAM_TYPE_MISMATCH,
+                    "值类型由 " + oldType + " 改为 " + type.name() + " 时必须给出新值：" + cmd.paramKey());
+        }
+        if (!blankValue) {
+            existing.setParamValue(type.secret() ? ParamValueCipher.encrypt(value, cryptoKeys.key()) : value);
+        }
         existing.setEncrypted(type.secret());
-        boolean keepCiphertext = type.secret() && existing.isEncrypted()
-                && (cmd.paramValue() == null || cmd.paramValue().isBlank());
-        existing.setParamValue(keepCiphertext ? existing.getParamValue()
-                : (type.secret() ? ParamValueCipher.encrypt(value, cryptoKeys.key()) : value));
         existing.setUpdatedAt(Instant.now());
         existing.setUpdatedBy(operator);
         existing.setVersion(cmd.version());
@@ -365,7 +373,7 @@ public class ParamAppService {
 
     /** 事件在**事务内**注册，提交后才投递（{@code @TransactionalEventListener(AFTER_COMMIT)}，3.1.4）。 */
     private void publishChanged(String changeType, ParamItem row) {
-        events.publishEvent(new ParamChangedEvent(idGenerator.nextStr(), changeType, row.getParamKey(),
+        events.publishEvent(new ParamChangedEvent(idGenerator.nextStr(), Instant.now(), changeType, row.getParamKey(),
                 row.getParamLevel(), row.getOwnerId()));
         log.info("参数变更：type={} key={} level={} ownerId={}", changeType, row.getParamKey(),
                 row.getParamLevel(), row.getOwnerId());

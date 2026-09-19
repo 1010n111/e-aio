@@ -57,6 +57,25 @@ public final class RedisKeys {
         return of(env, "idem", sha256(material));
     }
 
+    /**
+     * 环境段 {@code {env}} 的**取值规则**（唯一实现）：显式配置（{@code eaio.env} / {@code EAIO_ENV}）
+     * 优先，其次第一个激活 profile，最后 {@code default}。
+     *
+     * <p>规则集中在这里而不是各装配类各写一遍：{@code eaio:{env}:platform:...} 与 {@code eaio:{env}:idem:...}
+     * 是两套键空间，两处规则一旦分叉，同一进程会用两个 env 前缀写同一个 Redis——不报错，只在排查时才发现。
+     * 参数仍由调用方显式传入（本类不读全局状态、不读 Spring 配置，故保持零 Spring 依赖）。
+     */
+    public static String envOf(String configuredEnv, String[] activeProfiles) {
+        if (configuredEnv != null && !configuredEnv.isBlank()) {
+            return configuredEnv.trim();
+        }
+        if (activeProfiles != null && activeProfiles.length > 0
+                && activeProfiles[0] != null && !activeProfiles[0].isBlank()) {
+            return activeProfiles[0];
+        }
+        return "default";
+    }
+
     private static String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

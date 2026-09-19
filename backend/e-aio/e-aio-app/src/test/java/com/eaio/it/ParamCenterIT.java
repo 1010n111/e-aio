@@ -3,15 +3,20 @@ package com.eaio.it;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntSupplier;
 
 import javax.sql.DataSource;
 
 import com.eaio.common.exception.BusinessException;
+import com.eaio.common.redis.RedisKeys;
 import com.eaio.platform.api.ParamApi;
 import com.eaio.platform.api.dto.ParamSaveCmd;
 import com.eaio.platform.api.port.OrgContextPort;
@@ -23,6 +28,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.RestClient;
@@ -62,6 +71,13 @@ class ParamCenterIT extends IntegrationTestBase {
     /** 广播发布方：用它模拟"另一个实例改完值后发的失效消息"。 */
     @Autowired
     private ParamInvalidationPublisher publisher;
+
+    /** L2 层与广播通道都在 Redis 上：校验"L2 真的接了"与"广播真的发了"必须直接看 Redis。 */
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private Environment environment;
 
     @LocalServerPort
     private int port;
@@ -319,6 +335,76 @@ class ParamCenterIT extends IntegrationTestBase {
         jdbc().update("update eaio_platform.param set param_value = '1000', version = version + 1"
                 + " where id = ?", keyId);
         paramApi.refresh(key);
+    }
+
+    @Test
+    @DisplayName("留空 = 不变更只在类型不变时成立：STRING 行改成 SECRET 且留空必须 20002，不得留明文")
+    void blankValueWithTypeChangeIsRejected() {
+        String key = "it.param.typechange.blank";
+        paramApiSwitchTo(9701L, 9702L);
+        var created = paramApi.set(new ParamSaveCmd(key, "ORG", 9701L, "plain-text", "STRING", "it", null, null));
+
+        assertThatThrownBy(() -> paramApi.set(new ParamSaveCmd(key, "ORG", 9701L, "", "SECRET", "it", null,
+                created.version())))
+                .as("跨类型留空无法表达新值，必须显式拒绝而不是静默保留旧值（否则明文会被标成 encrypted）")
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(20002));
+
+        Map<String, Object> row = jdbc().queryForMap("select param_value, encrypted, value_type"
+                + " from eaio_platform.param where param_key = ? and param_level = 'ORG'", key);
+        assertThat(row.get("param_value")).isEqualTo("plain-text");
+        assertThat(row.get("encrypted")).isEqualTo(false);
+        assertThat(row.get("value_type")).isEqualTo("STRING");
+    }
+
+    @Test
+    @DisplayName("L2 真的接了：回源后 Redis 有该键，改值后键消失（不是「写了代码但从不命中」）")
+    void l2CacheIsWiredAndEvicted() {
+        String key = "it.param.l2.wired";
+        paramApiSwitchTo(9501L, 0L);
+        var created = paramApi.set(new ParamSaveCmd(key, "ORG", 9501L, "41", "INT", "it", null, null));
+        String redisKey = l2Key(9501L, key);
+        redisTemplate.delete(redisKey);
+
+        assertThat(paramApi.getInt(key, -1)).isEqualTo(41);
+        assertThat(redisTemplate.hasKey(redisKey)).as("回源后必须写 L2（否则 L2 等于没接）").isTrue();
+
+        paramApi.set(new ParamSaveCmd(key, "ORG", 9501L, "42", "INT", "it", null, created.version()));
+
+        assertThat(redisTemplate.hasKey(redisKey)).as("改值后 L2 键必须消失").isFalse();
+        assertThat(paramApi.getInt(key, -1)).isEqualTo(42);
+    }
+
+    @Test
+    @DisplayName("改值后监听器真的发广播：订阅同通道能收到 {env,region:param,key}")
+    void changePublishesInvalidationBroadcast() throws Exception {
+        String key = "it.param.broadcast.wired";
+        paramApiSwitchTo(9601L, 9602L);
+        AtomicReference<String> received = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        RedisMessageListenerContainer probe = new RedisMessageListenerContainer();
+        probe.setConnectionFactory(Objects.requireNonNull(redisTemplate.getConnectionFactory()));
+        probe.addMessageListener((message, pattern) -> {
+            received.set(new String(message.getBody(), StandardCharsets.UTF_8));
+            latch.countDown();
+        }, new ChannelTopic(publisher.channel()));
+        probe.afterPropertiesSet();
+        probe.start();
+        try {
+            paramApi.set(new ParamSaveCmd(key, "ORG", 9601L, "7", "INT", "it", null, null));
+
+            assertThat(latch.await(5, TimeUnit.SECONDS)).as("改值提交后必须发出跨实例失效广播").isTrue();
+            assertThat(received.get()).contains(key).contains("\"region\":\"param\"");
+        } finally {
+            probe.stop();
+            probe.destroy();
+        }
+    }
+
+    /** L2 键（与 {@code ParamL2Cache} 同一构造点）：{@code eaio:{env}:platform:param:{orgId}:{key}}。 */
+    private String l2Key(long orgId, String key) {
+        String env = RedisKeys.envOf(environment.getProperty("eaio.env"), environment.getActiveProfiles());
+        return RedisKeys.of(env, "platform", "param", Long.toString(orgId), key);
     }
 
     /** 轮询等待（不引 Awaitility：只为一个用例加一个测试依赖不划算）。 */

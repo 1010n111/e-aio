@@ -92,6 +92,37 @@ class IdempotencyFilterTest {
     }
 
     @Test
+    @DisplayName("业务失败（HTTP 200 但 code≠0）释放占位：同一幂等键可重试，且响应体照常写回")
+    void businessFailureReleasesPlaceholder() throws Exception {
+        request.addHeader(IdempotencyFilter.KEY_HEADER, KEY);
+        FilterChain failing = (req, res) -> {
+            res.setContentType("application/json;charset=UTF-8");
+            res.getWriter().write("{\"code\":20001,\"message\":\"参数不存在\",\"data\":null}");
+        };
+
+        filter(store(true)).doFilter(request, response, failing);
+
+        assertThat(placeholders).as("业务失败不得写成 DONE（否则调用方带着同一个键永远 10501，重试不进来）")
+                .isEmpty();
+        assertThat(response.getContentAsString()).as("响应体必须写回真实响应").contains("20001");
+    }
+
+    @Test
+    @DisplayName("业务成功（code=0）改写为 DONE：占位保留，同载荷再次提交被拦")
+    void businessSuccessMarksPlaceholderDone() throws Exception {
+        request.addHeader(IdempotencyFilter.KEY_HEADER, KEY);
+        FilterChain succeeding = (req, res) -> {
+            res.setContentType("application/json;charset=UTF-8");
+            res.getWriter().write("{\"code\":0,\"message\":\"成功\",\"data\":null}");
+        };
+
+        filter(store(true)).doFilter(request, response, succeeding);
+
+        assertThat(placeholders).as("成功记为 DONE").hasSize(1);
+        assertThat(response.getContentAsString()).contains("\"code\":0");
+    }
+
+    @Test
     @DisplayName("写动作缺少幂等键：返回 10001 且不执行业务（P1 册 5.6 收紧 P0 的“缺键放行”）")
     void missingKeyOnWriteActionIsRejected() throws Exception {
         IdempotencyStore spy = mock(IdempotencyStore.class);
@@ -204,7 +235,8 @@ class IdempotencyFilterTest {
     void failureReleasesPlaceholder() throws Exception {
         request.addHeader(IdempotencyFilter.KEY_HEADER, KEY);
         IdempotencyFilter idempotencyFilter = filter(store(true));
-        FilterChain failing = (req, res) -> ((MockHttpServletResponse) res).setStatus(500);
+        // chain 收到的是 ContentCachingResponseWrapper（过滤器要读响应体判业务成败），故按 HttpServletResponse 设状态
+        FilterChain failing = (req, res) -> ((jakarta.servlet.http.HttpServletResponse) res).setStatus(500);
 
         idempotencyFilter.doFilter(request, response, failing);
 

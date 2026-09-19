@@ -6,7 +6,6 @@ import com.eaio.common.json.JsonUtils;
 import com.eaio.platform.application.param.ParamResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
@@ -19,11 +18,10 @@ import org.springframework.stereotype.Component;
  * 而不是"只清 L1"：发布方的 L2 前缀删除是尽力而为（{@link ParamL2Cache} 里失败只记 WARN），只清 L1
  * 会把脏 L2 留在原地；参数量级 ≤2000 键（7.2），多一次前缀删除的代价可接受。
  *
- * <p>只在真的配了 Redis 时注册（{@code spring.data.redis.host}）：否则订阅容器会持续重连，把
- * "无库无 Redis 的空应用"（镜像默认形态）刷满 WARN。
+ * <p>本类是"消息怎么处理"，"要不要订阅"由 {@link ParamInvalidationBroadcastConfig} 决定（未配 Redis
+ * 时不建容器，本 bean 于是只是闲置，不会发起任何连接）。
  */
 @Component
-@ConditionalOnProperty(prefix = "spring.data.redis", name = "host")
 public class ParamInvalidationSubscriber implements MessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(ParamInvalidationSubscriber.class);

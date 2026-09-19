@@ -35,8 +35,12 @@ import org.springframework.stereotype.Component;
  *       多半是代码拼错——把拼错的键缓存 60s 会把错误藏起来。</li>
  * </ol>
  *
- * <p>跨实例失效广播（Redis Pub/Sub {@code platform:ch:invalidation}）不在这里：见 T4/T6 的说明，
- * 本票只做本机 L1 清空 + L2 前缀删除（改值后其他实例最长 60s 读到旧值，L1 TTL 兜底）。
+ * <p><b>跨实例失效广播</b>（Redis Pub/Sub {@code eaio:{env}:platform:ch:invalidation}）不在这里，但
+ * "三件事"是配套的：本类的 {@link #invalidate(String)}/{@link #invalidateAll()} 负责清本机 L1 与 L2，
+ * 改值方（{@code ParamInvalidationListener}，{@code @TransactionalEventListener(AFTER_COMMIT)}）
+ * 另外删 L2 前缀并把失效消息广播出去，其他实例的订阅方（{@code ParamInvalidationSubscriber}）
+ * 收到后再调本类的 invalidate——三件事都做齐，其他实例才不会读到旧值（只做广播会漏发布方自己，
+ * 只做本机会让其他实例最长读 60s 旧值，L1 TTL 只是兜底）。
  */
 @Component
 public class ParamResolver {

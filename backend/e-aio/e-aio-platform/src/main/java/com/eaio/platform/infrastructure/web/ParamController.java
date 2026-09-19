@@ -6,6 +6,7 @@ import com.eaio.common.api.PageResult;
 import com.eaio.platform.api.dto.ParamDTO;
 import com.eaio.platform.api.dto.ParamDelCmd;
 import com.eaio.platform.api.dto.ParamGetCmd;
+import com.eaio.platform.api.dto.ParamGroupCmd;
 import com.eaio.platform.api.dto.ParamQuery;
 import com.eaio.platform.api.dto.ParamSaveCmd;
 import com.eaio.platform.api.dto.ParamWithSourceDTO;
@@ -57,11 +58,11 @@ public class ParamController {
         return service.effective(cmd.paramKey(), cmd.paramLevel(), cmd.ownerId());
     }
 
-    /** 按分组列表（{@code paramGroup} 为空 = 全量）。 */
+    /** 按分组列表（{@code paramGroup} 为空 = 全量，5.2 的 {@code {paramGroup?}} 入参）。 */
     @PostMapping("/GetAll")
     @PreAuthorize("hasAuthority('platform:param:list')")
-    public List<ParamWithSourceDTO> getAll(@RequestBody(required = false) ParamGetCmd ignored) {
-        return service.listByGroup(ignored == null ? null : null);
+    public List<ParamWithSourceDTO> getAll(@Valid @RequestBody(required = false) ParamGroupCmd cmd) {
+        return service.listByGroup(cmd == null ? null : cmd.paramGroup());
     }
 
     /** 新增（管理端可写任意级别）。 */

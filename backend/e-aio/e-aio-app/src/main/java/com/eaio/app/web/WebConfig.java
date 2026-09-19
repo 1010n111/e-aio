@@ -9,6 +9,8 @@ import com.eaio.common.api.ErrorCode;
 import com.eaio.common.api.IdempotencyStore;
 import com.eaio.common.api.Result;
 import com.eaio.common.json.JsonUtils;
+import com.eaio.common.redis.RedisKeys;
+import com.eaio.common.redis.RedisKit;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,21 +50,43 @@ public class WebConfig {
     }
 
     /**
-     * 占位存储：配置了 Redis 就用 Redis；否则退回内存实现（单实例、跨实例不保证幂等）。
+     * Redis 能力门面（common 的 {@link RedisKit}）：**配了 Redis 才注册**，幂等占位与 platform 的两级缓存
+     * L2（`ObjectProvider<RedisKit>`）共用同一个 bean。
+     *
+     * <p>不加 {@code @ConditionalOnProperty} 的原因：判定是"host **或** port 任一存在"，而该注解的多属性语义
+     * 是 AND；同一条件写在两处（这里一处、platform 的订阅容器一处）迟早分叉。返回 {@code null} 时 Spring
+     * 不注册该 bean，platform 侧拿到 null 即"L2 关闭"，与"未配 Redis 也能跑完整链路"一致。
+     */
+    @Bean
+    RedisKit redisKit(Environment environment, ObjectProvider<StringRedisTemplate> redisProvider) {
+        StringRedisTemplate redis = redisProvider.getIfAvailable();
+        if (!redisConfigured(environment) || redis == null) {
+            return null;
+        }
+        log.info("Redis 已配置：注册 RedisKit（幂等占位与 L2 缓存共用；env={}）", environmentOf(environment));
+        return new SpringRedisKit(redis, defaultTtl(environment));
+    }
+
+    /**
+     * 占位存储：配了 Redis 就用 Redis；否则退回内存实现（单实例、跨实例不保证幂等）。
      *
      * <p>这样"无 Redis 也能跑完整链路"，而"配了 Redis 却连不上"仍然 fail-closed（10502，不执行业务）。
      */
     @Bean
-    IdempotencyStore idempotencyStore(Environment environment, ObjectProvider<StringRedisTemplate> redisProvider) {
-        boolean redisConfigured = environment.containsProperty("spring.data.redis.host")
-                || environment.containsProperty("spring.data.redis.port");
-        StringRedisTemplate redis = redisProvider.getIfAvailable();
-        if (redisConfigured && redis != null) {
+    IdempotencyStore idempotencyStore(ObjectProvider<RedisKit> redisKitProvider) {
+        RedisKit redisKit = redisKitProvider.getIfAvailable();
+        if (redisKit != null) {
             log.info("幂等占位使用 Redis（跨实例生效；Redis 不可用时 fail-closed 返回 10502）");
-            return new RedisIdempotencyStore(new SpringRedisKit(redis, defaultTtl(environment)));
+            return new RedisIdempotencyStore(redisKit);
         }
         log.warn("未配置 Redis：幂等占位退回内存实现，**仅单实例有效**，多实例部署必须配置 Redis");
         return new InMemoryIdempotencyStore();
+    }
+
+    /** 有没有配 Redis：host 或 port 任一存在即视为已配置（两处判定必须共用这一条，见 {@link #redisKit}）。 */
+    private static boolean redisConfigured(Environment environment) {
+        return environment.containsProperty("spring.data.redis.host")
+                || environment.containsProperty("spring.data.redis.port");
     }
 
     /**
@@ -74,9 +98,9 @@ public class WebConfig {
         return Duration.ofSeconds(environment.getProperty("eaio.cache.redis.ttl-seconds", Long.class, 1800L));
     }
 
+    /** 环境段取值规则见 {@link RedisKeys#envOf}（唯一实现）：{@code eaio.env} 优先，其次首个激活 profile。 */
     private static String environmentOf(Environment environment) {
-        String[] profiles = environment.getActiveProfiles();
-        return profiles.length == 0 ? "default" : profiles[0];
+        return RedisKeys.envOf(environment.getProperty("eaio.env"), environment.getActiveProfiles());
     }
 
     /** 过滤器层直接写统一返回体：这里不能靠异常处理器（异常在处理链之外抛出）。 */

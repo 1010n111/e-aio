@@ -63,6 +63,17 @@ class RedisKeysTest {
     }
 
     @Test
+    @DisplayName("env 取值规则（唯一实现）：eaio.env 优先（并去空白）> 首个激活 profile > default")
+    void envResolutionRule() {
+        assertThat(RedisKeys.envOf(" prod ", new String[] {"it"})).as("显式配置优先，且去首尾空白").isEqualTo("prod");
+        assertThat(RedisKeys.envOf(null, new String[] {"it"})).isEqualTo("it");
+        assertThat(RedisKeys.envOf("  ", new String[] {"it"})).as("空白配置等于没配").isEqualTo("it");
+        assertThat(RedisKeys.envOf(null, new String[0])).isEqualTo("default");
+        assertThat(RedisKeys.envOf(null, null)).isEqualTo("default");
+        assertThat(RedisKeys.envOf(null, new String[] {null, "second"})).as("首个 profile 为空也不能拼出空 env 段").isEqualTo("default");
+    }
+
+    @Test
     @DisplayName("不做隐式改写：段内空白原样保留（键是调用方与运维都能看到的契约）")
     void doesNotRewriteSegments() {
         assertThat(RedisKeys.of("prod", " x ")).isEqualTo("eaio:prod: x ");

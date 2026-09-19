@@ -15,6 +15,7 @@ import com.eaio.arch.probes.DuplicatedWithinModuleErrorCode;
 import com.eaio.arch.probes.GenericSegmentClashErrorCode;
 import com.eaio.arch.probes.OutOfSegmentErrorCode;
 import com.eaio.arch.probes.events.BadEventProbe;
+import com.eaio.arch.probes.events.MissingOccurredAtProbe;
 import com.eaio.arch.probes.internal.InternalProbe;
 import com.eaio.arch.probes.owner.OwnerProbe;
 import com.eaio.common.api.BusinessErrorCode;
@@ -373,7 +374,7 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("事件 record：第一个组件必须是 eventId（P1 册 6.3；消费侧用它做幂等键）")
+    @DisplayName("事件 record：前两个组件必须是 eventId/occurredAt（P1 册 3.9.1；幂等键 + 业务发生时间）")
     void eventRecordsHaveEventIdFirst() {
         List<JavaClass> events = eventRecords(CLASSES);
 
@@ -382,14 +383,16 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("eventId 位次规则有效：控制组（第一个组件不是 eventId）被抓到并指名字段")
+    @DisplayName("eventId/occurredAt 位次规则有效：两个控制组（首位错、二位错）都被抓到并点名")
     void eventRecordsHaveEventIdFirstRuleHasTeeth() {
-        JavaClasses probes = new ClassFileImporter().importClasses(BadEventProbe.class);
+        JavaClasses probes = new ClassFileImporter().importClasses(BadEventProbe.class, MissingOccurredAtProbe.class);
+        List<String> violations = eventIdViolations(eventRecords(probes));
 
-        assertThat(eventIdViolations(eventRecords(probes)))
-                .as("位次错了必须判违规，且消息里点名事件类与实际首字段")
-                .hasSize(1)
-                .allSatisfy(violation -> assertThat(violation).contains("BadEventProbe", "paramKey"));
+        assertThat(violations).as("两个控制组各判一条").hasSize(2);
+        assertThat(violations).anySatisfy(violation -> assertThat(violation)
+                .contains("BadEventProbe", "第一个组件必须是 eventId"));
+        assertThat(violations).anySatisfy(violation -> assertThat(violation)
+                .contains("MissingOccurredAtProbe", "第二个组件必须是 occurredAt"));
     }
 
     /** 规则形状一：{@code ownerPackage} **之外**的类不得依赖 {@code internalPackages}（内部层不可外引）。 */
@@ -412,7 +415,7 @@ class ArchitectureTest {
                 .toList();
     }
 
-    /** eventId 位次违规：第一个组件不是 {@code eventId} 的事件；空列表 = 全部合规。 */
+    /** eventId/occurredAt 位次违规：前两个组件不是 {@code eventId}/{@code occurredAt} 的事件；空列表 = 全部合规。 */
     private static List<String> eventIdViolations(List<JavaClass> events) {
         List<String> violations = new ArrayList<>();
         for (JavaClass event : events) {
@@ -421,6 +424,11 @@ class ArchitectureTest {
             if (components == null || components.length == 0 || !"eventId".equals(components[0].getName())) {
                 violations.add(event.getName() + "：事件 record 的第一个组件必须是 eventId（消费侧幂等键），实际="
                         + (components == null || components.length == 0 ? "(无组件)" : components[0].getName()));
+                continue;
+            }
+            if (components.length < 2 || !"occurredAt".equals(components[1].getName())) {
+                violations.add(event.getName() + "：事件 record 的第二个组件必须是 occurredAt（业务发生时间），实际="
+                        + (components.length < 2 ? "(只有一个组件)" : components[1].getName()));
             }
         }
         return violations;
