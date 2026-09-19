@@ -30,6 +30,10 @@
     <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
     <!-- 实体 ↔ DTO 映射（P1 册裁决 P1-C3：MapStruct，componentModel=spring、unmappedTargetPolicy=ERROR） -->
     <mapstruct.version>1.6.3</mapstruct.version>
+    <!-- 任务分布式锁（P1 册 3.4.2）：设计册写 6.6.0，实测 6.x 依赖 Spring 6，而本工程是 Boot 4.1/Spring 7
+         → 锁 7.10.1（7.x 起才支持 Spring 7）。只引 core + JDBC template provider：调度是"从 job 表动态建
+         CronTrigger"，没有 @Scheduled 注解，用不上 shedlock-spring 的注解 AOP。理由见 P1-3 册《实现注记（T7）》。 -->
+    <shedlock.version>7.10.1</shedlock.version>
     <!-- checkstyle 规则集（P1 M1 冻结，含门禁级别）：见 config/checkstyle/checkstyle.xml 头部说明。
          工具版本随插件默认（插件版本已锁），不额外 pin checkstyle 版本，避免引入未验证的 artifact。 -->
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>

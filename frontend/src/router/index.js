@@ -44,6 +44,16 @@ const routes = [
           permission: 'platform:dict:list',
         },
       },
+      {
+        path: 'platform/job',
+        name: 'platform-job',
+        component: () => import('@/views/platform/job/JobList.vue'),
+        meta: {
+          title: '定时任务',
+          // 同 3.10.2：启停/触发/重试按钮不做前端隐藏，权限由后端 @PreAuthorize 兜底（7.5 遗留）
+          permission: 'platform:job:list',
+        },
+      },
     ],
   },
 ]

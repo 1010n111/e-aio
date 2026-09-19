@@ -101,5 +101,24 @@
       <version>${mapstruct.version}</version>
       <scope>provided</scope>
     </dependency>
+
+    <!--
+      任务分布式锁（P1 册 3.4.2、4.3.11）：ShedLock 7.10.1，JDBC template provider + usingDbTime()，
+      锁表 eaio_platform.shedlock（V5 显式建表，列名/类型是 provider 的 SQL 契约）。
+      只引 core + provider-jdbc-template（两者都直接用到：LockProvider/LockConfiguration/SimpleLock、
+      JdbcTemplateLockProvider），不引 shedlock-spring：本票的调度是从 job 表动态建 CronTrigger，
+      没有 @Scheduled 注解可挂，@EnableSchedulerLock 的注解 AOP 用不上（见《实现注记（T7）》）。
+      provider 传递 spring-jdbc（版本仍由 Boot BOM 统一管理）与 jspecify（Apache-2.0，许可证白名单内）。
+    -->
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-core</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.javacrumbs.shedlock</groupId>
+      <artifactId>shedlock-provider-jdbc-template</artifactId>
+      <version>${shedlock.version}</version>
+    </dependency>
   </dependencies>
 </project>

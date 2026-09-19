@@ -58,3 +58,34 @@ VALUES
     (44, 'platform_alert_severity', 'WARN', '警告', 20, 'ENABLED', false, 0),
     (45, 'platform_alert_severity', 'CRITICAL', '严重', 30, 'ENABLED', false, 0)
 ON CONFLICT DO NOTHING;
+
+-- P1 T7 落地 3.4.5 的 6 个内置任务（P1 册 4.5「内置任务（6 条）」）。ID 区间 51–60
+-- （与参数 1–10、字典类型 21–24、字典项 31–45 不冲突；雪花 ID 远大于 9999）。
+--
+-- 两条口径：
+--   1. `retry_max`：册面 4.5 写「`retry_max = 0`（重试扫描任务）或 3（其余）」。6 条里**重投扫描**
+--      语义的是 `platform.event.retry`（`*/30 * * * * *`，重投 event_delivery，3.4.5 第 4 行）
+--      → 取 0；其余 5 条取 3。任务重试扫描器（`platform.job.retry.scan`，3.4.4）**不是** job 行：
+--      它由调度器内部按固定 30 秒注册（3.4.7 要求它"不重试自己"，内部任务天然满足）。差异与理由
+--      登记在《实现注记（T7）》。
+--   2. 6 条全部 `enabled = true`；`handler_code` 与 `job_code` 逐字相同（3.4.5 的前两列）。
+--      T7 只注册 `platform.job.log.clean` 一个处理点：其余 5 个能力的表（file/event/alert/notice）
+--      在 V5 时点还不存在，按 3.4.2「单个坏任务只跳过自己并记 ERROR，不阻断启动」处理——
+--      任务行先种下（`job` 就是注册表），处理点随各能力的票在代码里注册后自动生效。
+INSERT INTO eaio_platform.job
+    (id, job_code, job_name, handler_code, cron, enabled, timeout_seconds, retry_max, backoff_seconds,
+     allow_concurrent, remark, created_by)
+VALUES
+    (51, 'platform.job.log.clean', '任务运行日志清理', 'platform.job.log.clean', '0 0 3 * * *',
+        true, 300, 3, 30, false, '删除超保留天数的 job_run，并把疑似实例宕机的 RUNNING 行置 FAILED（3.4.7）', 0),
+    (52, 'platform.file.session.expire', '分片上传会话过期清理', 'platform.file.session.expire', '0 */10 * * * *',
+        true, 300, 3, 30, false, '过期分片会话置 EXPIRED 并删分片文件（4.3.6）', 0),
+    (53, 'platform.file.orphan.clean', '孤儿文件清理', 'platform.file.orphan.clean', '0 30 3 * * *',
+        true, 300, 3, 30, false, '无 file_binding 且超期的 file 软删，再超期物理删（4.3.8）', 0),
+    (54, 'platform.event.retry', '事件投递重试扫描', 'platform.event.retry', '*/30 * * * * *',
+        true, 300, 0, 30, false, '重投 event_delivery；重投类任务不重试自己，避免重试风暴（3.4.7）', 0),
+    (55, 'platform.alert.evaluate', '告警规则评估', 'platform.alert.evaluate', '0 * * * * *',
+        true, 300, 3, 30, false, '按 alert_rule 评估指标并触发告警（3.7）', 0),
+    (56, 'platform.notice.publish.scan', '定时公告发布扫描', 'platform.notice.publish.scan', '0 * * * * *',
+        true, 300, 3, 30, false, '到点的定时公告由 DRAFT 置 PUBLISHED（3.8）', 0)
+ON CONFLICT DO NOTHING;
