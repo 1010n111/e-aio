@@ -15,7 +15,7 @@ class ResultTest {
         Result<String> result = Result.ok("payload");
 
         assertThat(result.getCode()).isZero();
-        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.successful()).isTrue();
         assertThat(result.getMessage()).isEqualTo(ErrorCode.SUCCESS.getMessage());
         assertThat(result.getData()).isEqualTo("payload");
         assertThat(result.getTraceId()).isNull();
@@ -27,17 +27,17 @@ class ResultTest {
         assertThat(Result.ok("payload", "已保存").getMessage()).isEqualTo("已保存");
 
         Result<Void> empty = Result.ok();
-        assertThat(empty.isSuccess()).isTrue();
+        assertThat(empty.successful()).isTrue();
         assertThat(empty.getData()).isNull();
     }
 
     @Test
-    @DisplayName("失败：显式错误码，data 为空且 isSuccess=false")
+    @DisplayName("失败：显式错误码，data 为空且 successful=false")
     void failWithExplicitCode() {
         Result<String> result = Result.fail(10500, "系统内部错误");
 
         assertThat(result.getCode()).isEqualTo(10500);
-        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.successful()).isFalse();
         assertThat(result.getMessage()).isEqualTo("系统内部错误");
         assertThat(result.getData()).isNull();
     }
@@ -66,4 +66,25 @@ class ResultTest {
 
         assertThat(result.getTraceId()).isEqualTo("trace-1");
     }
+
+    @Test
+    @DisplayName("序列化只出现契约 V1 的四个字段（多一个字段就是契约变更）")
+    void serializedShapeIsExactlyTheContract() {
+        Result<String> result = Result.ok("payload");
+        result.setTraceId("t-1");
+
+        String json = com.eaio.common.json.JsonUtils.toJson(result);
+
+        assertThat(json).isEqualTo("{\"code\":0,\"message\":\"成功\",\"data\":\"payload\",\"traceId\":\"t-1\"}");
+    }
+
+    @Test
+    @DisplayName("失败体同样只有契约字段，且 data 为 null")
+    void serializedFailureShape() {
+        String json = com.eaio.common.json.JsonUtils.toJson(Result.fail(ErrorCode.DATA_CONFLICT));
+
+        assertThat(json).isEqualTo("{\"code\":10003,\"message\":\"数据冲突（版本过期/重复）\",\"data\":null,\"traceId\":null}");
+    }
 }
+
+

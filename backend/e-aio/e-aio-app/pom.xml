@@ -51,6 +51,12 @@
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
+
+    <!-- Redis：P0 仅用于幂等占位（P0 册 3.2.5）；RedisKit 门面与 Redisson 随 P1 引入 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

@@ -12,6 +12,13 @@ spring:
   autoconfigure:
     exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
 
+# 接口路径统一 /api/<module>/<resource>/<Action>（P0 册 3.9、docs/agents/api-conventions.md）：
+# 用 servlet context-path 承载 /api 前缀，控制器映射里就不必重复写它；
+# 前端 Vite 代理把 /api 原样转给后端，无需 rewrite。
+server:
+  servlet:
+    context-path: /api
+
 # 每模块独立 Flyway 实例（P0 册 3.6）：
 #   modules 的取值与模块根包同名 —— 脚本目录 classpath:db/migration/<module>，
 #   默认 Schema eaio_<module>，历史表建在该 Schema 内，版本号在模块内独立递增。

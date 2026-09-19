@@ -381,6 +381,12 @@ public class IdempotentReplayException extends RuntimeException {
 | 异常 | 幂等命中抛 `IdempotentReplayException`，由 3.3 全局异常处理统一返回 |
 | 范围 | 写接口（Add/Up/Del 及业务动作）强制、查询接口不启用；幂等键缺失时按普通请求放行并记录 WARN |
 
+> **实现注记（2026-09-19，T6 落地）**：
+> 1. **占位是"端口 + 适配器"**：`com.eaio.common.api.IdempotencyStore`（acquire/complete/release）由入口过滤器使用，`RedisIdempotencyStore` 负责键与 TTL。好处是判定链路可用内存实现测清楚，Redis 适配器只测连接失败语义。
+> 2. **未配置 Redis 时退回内存实现**（`InMemoryIdempotencyStore`，启动 WARN 提示"仅单实例有效"）：P0 明确"Redis 实现本体随 P1"，而本机/演示环境常常没有 Redis——此刻直接 fail-closed 会让带幂等键的请求全部 10502，链路等于不可用。**边界写清**：多实例部署必须配置 Redis。**注意这与"Redis 已配置但不可用"是两件事**，后者仍然 fail-closed（10502，不执行业务）。
+> 3. **失败判定看响应**：HTTP ≥ 400 或下游抛异常即释放占位；业务失败但 HTTP 200（本工程常态）下占位保持 DONE——业务失败意味着"这次动作已处理过"，重试应换新键。
+> 4. **键长上限 200**：超长键按"无键"处理（截断会让不同请求撞同一个键，比放行更危险）。
+
 > **重复提交的两种状态（必须明确）**：`10501` 对 **`PROCESSING`（首个请求仍在执行中）** 与 **`DONE`（已完成）** 两种情况**同样返回**——即"执行中重放"也算重复提交，客户端提示"请求已提交，请稍后刷新"，不等待、不回放。因此**长任务接口（导出/批量导入）不得以幂等键承担结果交付**：结果交付走任务 ID + 轮询（异步导入 API 随 FR-PLT-05 在 P1 冻结，见 4.3）。
 >
 > **幂等校验不可用时的行为（第五轮裁决，fail-closed）**：Redis 不可用（连接失败/超时）导致**无法判定是否重复**时，`IdempotencyFilter` **拒绝执行**并返回 `10502`（幂等校验不可用）+ ERROR 日志（含 traceId），**不静默放行**——放行会在 Redis 抖动期间真实产生重复写入，与"接口幂等"承诺相违。代价：Redis 故障时**写接口短时不可用，读接口不受影响**。P0 不提供 `fail-open` 开关（`eaio.idempotency.fail-open` 属 P1 评估项，默认恒为 closed）：单一行为比两套行为更可验证，本地无 Redis 时也不会误以为"幂等已生效"。
@@ -407,6 +413,13 @@ public class IdempotentReplayException extends RuntimeException {
 - **参数/报文类异常必须先于兜底分支显式处理**：否则 JSON 解析失败、缺参、方法不支持等会落到 10500 系统错误，误导前端与运维排查；P0 单测须覆盖"JSON 解析失败"与"参数校验失败"两条路径。
 - 统一记录 `traceId`，异常日志与审计联动（P1 audit 接入后替换切面占位）；
 - 审计写入失败在强审计场景阻断（P1 实现，P0 预留扩展点）。
+
+> **实现注记（2026-09-19，T6 落地，全部经真机 HTTP 验证）**：
+> 1. **类名**：响应回填实现为 `ApiResponseAdvice`（上表/3.4 旧称 `GlobalResponseAdvice`）；控制器**不自己拼返回体**，只返回业务数据，由 Advice 包成 `Result` 并回填 `traceId`——否则每个接口都要记得填 traceId，形状也容易与异常处理器不一致。
+> 2. **未预期异常的兜底映射已实测**：`/Crash` 返回 `10500` + 固定文案，内部异常消息不出现在响应体里（有断言与真机双重验证）。
+> 3. **`Result` 不得有 `isSuccess()`/`isOk()` 之类方法**：会被 Jackson 当 bean 属性，序列化出契约之外的 `success`/`ok` 字段（真机实测踩到过）。判断成功的方法命名为 `successful()`，并有断言测试锁死"响应体只有 `code`/`message`/`data`/`traceId` 四个字段"。
+> 4. **`/api` 前缀由 `server.servlet.context-path` 承载**（3.9），控制器映射里不重复写；前端 Vite 代理把 `/api` 原样转发，无需 rewrite。
+> 5. **演示接口**：`com.eaio.app.web.DemoController`（`/platform/demo/Echo|Fail|Crash|Validate`）只为让入站链路有可被真实请求触发的对象（3.10 步骤 3/4），**P1 platform 首个真实接口落地时删除**；它不占用 platform 业务错误码段（用通用段码）。
 
 ### 3.4 日志与链路基础
 

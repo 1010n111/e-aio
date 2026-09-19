@@ -8,3 +8,7 @@ eaio:
 spring:
   autoconfigure:
     exclude: org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+server:
+  servlet:
+    # 生产用 /api 前缀（见主配置）；测试里保持空，便于直接按控制器映射发起请求
+    context-path: ""

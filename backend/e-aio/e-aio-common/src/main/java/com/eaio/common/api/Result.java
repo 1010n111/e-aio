@@ -59,8 +59,14 @@ public class Result<T> {
         return fail(errorCode.getCode(), errorCode.getMessage());
     }
 
-    /** 是否成功。 */
-    public boolean isSuccess() {
+    /**
+     * 是否成功。
+     *
+     * <p>刻意不用 {@code isSuccess()}/{@code isOk()} 这类名字：它们会被 Jackson 当成 bean 属性，
+     * 序列化出契约之外的 {@code success}/{@code ok} 字段（契约 V1 只有 code/message/data/traceId，
+     * 有断言测试守着）。判断成功与否，调用方也可以直接看 {@code code}。
+     */
+    public boolean successful() {
         return code == ErrorCode.SUCCESS_CODE;
     }
 
