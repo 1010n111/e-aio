@@ -80,8 +80,8 @@ related:
 | 数据范围（data scope） | 枚举 `SELF / DEPT / ORG / ORG_AND_SUB / ALL / CUSTOM`（本人 / 本部门 / 本组织 / 本组织及下级 / 全集团 / 自定义） |
 | 权限点（permission） | 权限的最小判定单位，字符串 `module:resource:action`（全小写，如 `iam:user:reset`）；角色与权限点多对多 |
 | 参数分级 | 参数（param）按 `scope_type` 取 `SYSTEM` / `ORG`，后者按 `org_id` 覆盖前者（三级配置：代码默认 → env 文件 → 参数中心） |
-| 任务（job） | platform 内一条可调度定义（`sys_job`），执行一次留一条 `sys_job_log` |
-| 异步导出/导入任务 | platform 的 `sys_async_task`：长任务**不以幂等键交付结果**，返回 `taskId` 由前端轮询（P0 册 3.2.5） |
+| 任务（job） | platform 内一条可调度定义（`job`），执行一次留一条 `job_run` |
+| 异步导出/导入任务 | platform 的 `excel_task`：长任务**不以幂等键交付结果**，返回 `taskId` 由前端轮询（P0 册 3.2.5） |
 
 ### 1.4 参考资料
 
@@ -194,7 +194,7 @@ HLD/SRS 与 AGENTS 系列（评审基准，优先级最高）存在不一致时�
 | C-19 | Controller 放五层中的哪一层 | HLD §2.2.2 五层（api/application/domain/infrastructure/events）未给入站适配器位置 | **Controller 放 `infrastructure/web`**；`api` 包只放跨模块契约（interface + DTO） | `api` 会被其他模块依赖，混入 `@RestController` 等于让契约带 Web 依赖（见 3.2） |
 | C-20 | OAuth2 授权服务器时机 | HLD §5.2："Spring Security + OAuth2 Authorization Server（自托管）"（C-9 已裁"不作 IdP"） | **M1–M5 不做授权服务器**；对外发令牌（第三方客户端）属 P3 `integration`（顺序 21）。用 `spring-security-oauth2-jose` 只做签名/校验 | 对外 IdP 需要客户端注册/授权同意/scope 管理面，P1 无消费方（4.2） |
 | C-21 | SSO 交付范围 | SRS FR-SEC-03：SSO(SAML2/OIDC)+LDAP | M2–M5 交付 **OIDC + LDAP** 适配，统一收敛到 `IdentityProvider` SPI，首次登录**默认拒绝**（需管理员预建账号，`auto-create-user` 默认 false）；**SAML2 留 P1 后半** | SAML2 需要证书/元数据管理面与真实 IdP 验证环境，M1–M5 无法验证 → 不假装交付（4.2） |
-| C-22 | 数据权限 SQL 是否允许跨 Schema 子查询 | P0/HLD："禁跨 Schema SQL"（AGENTS database.md、HLD §4.2）；但数据权限需要组织子树 | **不跨 Schema**：`TenantCtx.orgIds` 在认证时由 iam 解析并缓存，过滤器只生成 `orgColumn IN (:orgIds)`；超 `max-org-ids`(2000) 报 `21120` | 为数据权限破例会让例外变常态；子树 id 集合在本项目量级可控，且与"禁跨 Schema"的冻结项一致（4.5） |
+| C-22 | 数据权限 SQL 是否允许跨 Schema 子查询 | P0/HLD："禁跨 Schema SQL"（AGENTS database.md、HLD §4.2）；但数据权限需要组织子树 | **不跨 Schema**：`TenantCtx.orgIds` 在认证时由 iam 解析并缓存，过滤器只生成 `orgColumn IN (:orgIds)`；超 `max-org-ids`(2000) 报 `21037` | 为数据权限破例会让例外变常态；子树 id 集合在本项目量级可控，且与"禁跨 Schema"的冻结项一致（4.5） |
 
 ### 2.6 P0 遗留待细化事项的销账（P0 册 6.3，逐条）
 
@@ -298,7 +298,20 @@ public interface CacheApi {                         // 缓存
 public interface MonitorApi {                       // 监测（只读）
     SystemSnapshot snapshot();
 }
+public interface NoticeApi {                        // 公告与站内消息（FR-PLT-08，见 3.9）
+    long publish(NoticePublishCmd cmd);            // 立即发布或按 publishTime 定时发布
+    List<NoticeDTO> getUnread();                   // 当前用户未读（依赖 TenantCtx，缺失时只返回 ALL 范围）
+    void markRead(long noticeId);                  // 幂等：重复标记不报错
+    PageResult<NoticeDTO> getPage(NoticeQuery query);
+}
+public interface NotifyTemplateApi {                // 通知模板（FR-PLT-08，见 3.9）
+    RenderedTemplate render(String templateCode, Map<String, String> params);  // 缺变量 20025；未声明占位符报同码
+    PageResult<NotifyTemplateDTO> getPage(NotifyTemplateQuery query);
+    NotifyTemplateDTO save(NotifyTemplateSaveCmd cmd);                          // 模板不存在 20024
+}
 ```
+
+**3.9 与本节的自洽口径**：公告落 `notice` 表（收件范围与已读见 3.9），模板落 `notify_template` 表；`render` 只做 `${var}` 字符串替换（**不执行表达式**，不引 Hutool——P0 册 4.8 注记 4 未引入），渲染结果不缓存；渠道 P1 只落地站内（`SITE`），`EMAIL`/`SMS` 可保存与渲染但**不提供发送接口**（不假装发送成功）；公告内容一律文本渲染，前端禁止 `v-html`。模板不存在报 `20024 MESSAGE_TEMPLATE_NOT_FOUND`，变量缺失报 `20025 MESSAGE_VARIABLE_MISSING`（3.12 表）。
 
 **契约规则**：
 1. `api` 只放 `interface` + `record` + 枚举；实现类在 `application`/`infrastructure`。
@@ -309,7 +322,7 @@ public interface MonitorApi {                       // 监测（只读）
 
 ### 3.4 参数配置中心（FR-PLT-01）
 
-**表**：`sys_config`（5.4.1）。**解析优先级**（HLD §9.3）：代码默认值 < `application-{env}.yml` < **参数中心 DB 值**（DB 最高，可热更新）。
+**表**：`param`（5.4.1）。**解析优先级**（HLD §9.3）：代码默认值 < `application-{env}.yml` < **参数中心 DB 值**（DB 最高，可热更新）。
 
 **取值路径**：`ParamApi.getString(key, def)` → Caffeine 本地缓存（TTL 60s）→ 未命中查 DB → 仍无则回退 `def`。**写路径**：Controller 改 DB + 发 `ParamChangedEvent` + `CacheApi.evict`。
 
@@ -321,21 +334,21 @@ public interface MonitorApi {                       // 监测（只读）
 
 ### 3.5 数据字典（FR-PLT-02）
 
-**表**：`sys_dict_type`、`sys_dict_data`（5.4.1）。`DictApi.items(typeCode)` 走两级缓存（3.8）；`DictChangedEvent` 触发精确失效。
+**表**：`dict_type`、`dict_item`（5.4.1）。`DictApi.items(typeCode)` 走两级缓存（3.8）；`DictChangedEvent` 触发精确失效。
 
 **规则**：字典值支持 `ext_json` 扩展（颜色/图标等前端渲染信息，**不要**为每种扩展加列）；字典值**不做物理删除**，只 `status` 停用（历史数据引用不能断）；`type_code`/`value` 全局唯一（DB 唯一约束，不靠应用层查重）；字典变更**不记审计明细**（audit 由通用操作审计覆盖，无需平台重复实现）。
 
 ### 3.6 统一文件（FR-PLT-03）
 
-**表**：`sys_file`（5.4.1）。**存储 SPI**：`FileStorage { String store(InputStream, StoredFileMeta); InputStream open(String relativePath); void delete(String relativePath); boolean exists(String relativePath); }`，M1–M3 只实现 `LocalFileStorage`（裁决 C-15），S3/MinIO 在有部署需求时再引入 SDK。
+**表**：`file`（5.4.1）。**存储 SPI**：`FileStorage { String store(InputStream, StoredFileMeta); InputStream open(String relativePath); void delete(String relativePath); boolean exists(String relativePath); }`，M1–M3 只实现 `LocalFileStorage`（裁决 C-15），S3/MinIO 在有部署需求时再引入 SDK。
 
 **上传校验（信任边界，逐条实现）**：
 1. 大小上限 `eaio.file.max-size`（默认 50MB）——**先看 `Content-Length` 再流式拷贝计数**，不能只看声明值。
 2. MIME 白名单 `eaio.file.allowed-content-types`（默认：图片/pdf/office/文本/zip 常用集）。
 3. 扩展名黑名单（`jsp/js/html/sh/exe/dll/bat/jar` 等）+ **落盘名由服务端生成**（`UUID` + 白名单内的扩展名），**绝不使用客户端文件名拼路径**。
 4. 路径校验：`root.relativize(resolve(relativePath).normalize())` 必须仍在 `root` 内（防 `../` 穿越）。
-5. 上传后**服务端重算 sha256** 落 `sys_file.sha256`（不信任客户端）；**不做秒传/物理去重**——去重会把删除变成引用计数问题，P1 无此需求。
-6. 下载：`Content-Disposition: attachment; filename*=UTF-8''<percent-encoded>`，文件名过滤 CR/LF（响应头注入）；`Content-Type` 回 `sys_file.content_type`，并加 `X-Content-Type-Options: nosniff`。
+5. 上传后**服务端重算 sha256** 落 `file.sha256`（不信任客户端）；**不做秒传/物理去重**——去重会把删除变成引用计数问题，P1 无此需求。
+6. 下载：`Content-Disposition: attachment; filename*=UTF-8''<percent-encoded>`，文件名过滤 CR/LF（响应头注入）；`Content-Type` 回 `file.content_type`，并加 `X-Content-Type-Options: nosniff`。
 
 **权限与带外下载**：`FileApi` 的**跨模块调用**不校验权限（调用方已鉴权，遵循"调用方鉴权"裁决 C-6）。**HTTP 下载** `/platform/file/Download` 必须鉴权：`uploader_id` 本人 / 本组织（数据权限，由 iam 提供的切面按 `uploader_org_id` 过滤）/ 管理员。带外预签名：`/platform/file/Presign` 返回 `/api/platform/file/Download?fileId=..&exp=..&sig=..`，`sig = HMAC-SHA256(secret, fileId + exp + uploaderId)`；**token 只解决"带 cookie/header 不便"的浏览器直下，不绕过数据权限**——校验 sig 后仍按 `uploader_id/uploader_org_id` 做同一套可见性判定。
 
@@ -343,7 +356,7 @@ public interface MonitorApi {                       // 监测（只读）
 
 ### 3.7 定时任务（FR-PLT-04）
 
-**表**：`sys_job`、`sys_job_log`（5.4.1）。**选型**：Spring Task + ShedLock（裁决 C-8），ShedLock 用 Redisson provider。
+**表**：`job`、`job_run`（5.4.1）。**选型**：Spring Task + ShedLock（裁决 C-8），ShedLock 用 Redisson provider。
 
 **注册（安全边界的核心，C-12）**：任务的**可执行点只能来自代码**——
 ```java
@@ -351,13 +364,13 @@ public interface JobHandler { String code(); void execute(JobContext ctx); }
 @Service @JobHandler(code = "platform.file.orphan.clean")   // 启动扫描登记
 class FileOrphanCleanHandler implements JobHandler { ... }
 ```
-`sys_job.handler_code` 必须命中 `JobHandlerRegistry`，否则保存/启用直接报 `20103`。**禁止按 DB 字符串反射调用任意 bean 方法**（RuoYi `invoke_target` 模式的 RCE 面，AGENTS 安全边界不允许）。
+`job.handler_code` 必须命中 `JobHandlerRegistry`，否则保存/启用直接报 `20103`。**禁止按 DB 字符串反射调用任意 bean 方法**（RuoYi `invoke_target` 模式的 RCE 面，AGENTS 安全边界不允许）。
 
-**调度**：启动时按 `sys_job` 建 `CronTask` 注册到 `TaskScheduler`；`enable/disable/Up` 触发重建（取消后重注册）；`SchedulerApi.register` 供模块**在代码里**声明任务（是否启用仍由 DB 决定，代码不启停）。多实例互斥靠 `@SchedulerLock(name = jobCode, lockAtMostFor = timeout × 重试次数 + 缓冲)`。
+**调度**：启动时按 `job` 建 `CronTask` 注册到 `TaskScheduler`；`enable/disable/Up` 触发重建（取消后重注册）；`SchedulerApi.register` 供模块**在代码里**声明任务（是否启用仍由 DB 决定，代码不启停）。多实例互斥靠 `@SchedulerLock(name = jobCode, lockAtMostFor = timeout × 重试次数 + 缓冲)`。
 
 **超时与重试**：`timeout_seconds` 到点取消（`Future.cancel(true)` + 中断），状态 `TIMEOUT`；失败按 `retry_times`/`retry_interval_seconds` **在同一把锁内**延迟重投（不 sleep 占线程）。
 
-**日志**：每次执行写 `sys_job_log`（含 `trace_id`，与日志可对齐）；保留 90 天，由 `platform.joblog.clean`（每日 03:00）清理。**告警**：同一任务连续失败 ≥ `eaio.scheduler.alert.fail-threshold`（默认 3）→ 发站内消息（3.9）+ 日志 ERROR；日志明细保留在任务日志接口。
+**日志**：每次执行写 `job_run`（含 `trace_id`，与日志可对齐）；保留 90 天，由 `platform.joblog.clean`（每日 03:00）清理。**告警**：同一任务连续失败 ≥ `eaio.scheduler.alert.fail-threshold`（默认 3）→ 发站内消息（3.9）+ 日志 ERROR；日志明细保留在任务日志接口。
 
 **首批注册任务（M1–M3 必须落地）**：`platform.joblog.clean`、`platform.file.orphan.clean`、`platform.cache.warmup`（可选，默认关闭）。HLD §6.3 的业务任务一律**不在此列**（业务模块 P2 注册）。
 
@@ -373,25 +386,25 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 
 ### 3.9 消息模板（FR-PLT-08）
 
-**表**：`sys_message_template`、`sys_message`（5.4.1）。**本册决策（C-15 同类）**：M1–M3 只落地**站内**通道；`MessageSender` SPI 留口（`SITE` 有实现，`EMAIL`/`SMS` 无实现时**记 WARN + 降级为站内 + 日志**，**不假装发送成功**）。
+**表**：`notify_template`、`notice`（5.4.1）。**本册决策（C-15 同类）**：M1–M3 只落地**站内**通道；`MessageSender` SPI 留口（`SITE` 有实现，`EMAIL`/`SMS` 无实现时**记 WARN + 降级为站内 + 日志**，**不假装发送成功**）。
 
 **渲染**：`${var}` 占位符，用 Hutool `StrUtil.format`（common 底座已含）；模板变量必须在 `variables_json` 声明，渲染时缺变量报 `20110`（而不是渲染出 `${}` 给用户看）。**只做字符串替换，不执行表达式**。
 
 **前端约定**：站内消息内容**一律文本渲染，禁止 `v-html`**（模板内容含用户数据，XSS 面）。这条写进 frontend-conventions，M1–M3 的前端只做消息列表/已读。
 
-**消费方**：portal（顺序 9）的待办/消息聚合读 `sys_message`；本册只保证表与 API，不做推送（WebSocket 属 portal/P3）。
+**消费方**：portal（顺序 9）的待办/消息聚合读 `notice`；本册只保证表与 API，不做推送（WebSocket 属 portal/P3）。
 
 ### 3.10 Excel 导入导出（FR-PLT-05）
 
-**表**：`sys_async_task`（**一张表覆盖导入与导出**，见 5.4.1；不为两种方向各建一套代码）。
+**表**：`excel_task`（**一张表覆盖导入与导出**，见 5.4.1；不为两种方向各建一套代码）。
 
-**契约**：`ExcelApi.submitImport/submitExport` 只**受理**（校验参数 → 落 `sys_async_task` → 投递到 `eaio-excel-*` 线程池 → 立即返回 `taskId`）；`progress(taskId)` 先读内存进度（`ConcurrentHashMap`），未命中回查 DB（**跨实例可查，这也是把进度按 500 行落库的原因**）。**长任务用 taskId + 轮询交付，不占幂等键**（P0 决策 3.2.5 同向）。
+**契约**：`ExcelApi.submitImport/submitExport` 只**受理**（校验参数 → 落 `excel_task` → 投递到 `eaio-excel-*` 线程池 → 立即返回 `taskId`）；`progress(taskId)` 先读内存进度（`ConcurrentHashMap`），未命中回查 DB（**跨实例可查，这也是把进度按 500 行落库的原因**）。**长任务用 taskId + 轮询交付，不占幂等键**（P0 决策 3.2.5 同向）。
 
 **导入**：Fesod 流式读（`ExcelKit`）→ 逐行校验 → `ExcelError(rowNum, column, value, message)` 收集（**上限 1000 条**，超出只计数，避免 OOM）→ 写错误文件（复用 `FileApi`，`bizType = "excel.import.error"`）。
 **事务口径（本册决策）**：行数 ≤ `eaio.excel.atomic-max-rows`（默认 20000）时**整批一个事务**（要么全成、要么全不成）；超过阈值降级为**每 1000 行一批提交**，任务结果明确记 `PARTIAL` + 成功行数 + 错误文件——**不允许出现"报了失败但其实提交了一半又不说"**。
 **并发幂等**：同一 `bizType + 提交人 + 文件 sha256` 在运行中重复提交 → 直接返回既有 taskId（`20112` 提示语义改为"已存在相同导入任务"由前端展示，不新建任务）。
 
-**导出**：分页游标流式写；上限 `eaio.excel.max-export-rows`（默认 100 万），超限报 `20105` 并要求缩小范围（**不静默截断**）。导出**必须留痕**：`sys_async_task` 记操作者/行数/条件摘要 + 发 `ExcelExportedEvent` → audit（NFR-SEC-05 的"导出留痕"在 P1 落地；**二进制水印（PDF/Excel 内嵌）留 P2**，本册只做留痕与前端提示，不宣称已做水印）。模板文件放 `classpath:excel/templates/*.xlsx`，支持"按模板导出"。
+**导出**：分页游标流式写；上限 `eaio.excel.max-export-rows`（默认 100 万），超限报 `20105` 并要求缩小范围（**不静默截断**）。导出**必须留痕**：`excel_task` 记操作者/行数/条件摘要 + 发 `ExcelExportedEvent` → audit（NFR-SEC-05 的"导出留痕"在 P1 落地；**二进制水印（PDF/Excel 内嵌）留 P2**，本册只做留痕与前端提示，不宣称已做水印）。模板文件放 `classpath:excel/templates/*.xlsx`，支持"按模板导出"。
 
 ### 3.11 系统监测（FR-PLT-07）
 
@@ -404,13 +417,13 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 
 | 码 | 枚举 | 消息 | 场景 |
 |---|---|---|---|
-| 20001 | `PARAM_NOT_FOUND` | 参数不存在 | `sys_config` 查无 |
+| 20001 | `PARAM_NOT_FOUND` | 参数不存在 | `param` 查无 |
 | 20002 | `PARAM_KEY_DUPLICATED` | 参数键已存在 | 新增重键 |
 | 20003 | `PARAM_VALUE_INVALID` | 参数值不符合声明类型 | 类型校验失败 |
 | 20004 | `PARAM_READONLY` | 系统内置参数不可修改 | `is_builtin=1` |
 | 20005 | `DICT_TYPE_NOT_FOUND` | 字典类型不存在 | 引用未定义类型 |
 | 20006 | `DICT_VALUE_DUPLICATED` | 字典值重复 | 同类型下 value 重复 |
-| 20007 | `DICT_TYPE_IN_USE` | 字典类型已被引用，不能删除 | 有 `sys_dict_data` |
+| 20007 | `DICT_TYPE_IN_USE` | 字典类型已被引用，不能删除 | 有 `dict_item` |
 | 20008 | `FILE_NOT_FOUND` | 文件不存在 | fileId 无效 |
 | 20009 | `FILE_EMPTY` | 上传文件为空 | 0 字节 |
 | 20010 | `FILE_TOO_LARGE` | 文件超过大小上限 | `eaio.file.max-size` |
@@ -440,12 +453,12 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 
 ### 3.14 关键流程（平台侧，写代码按此实现）
 
-**上传**：Controller（`@PreAuthorize` 鉴权 → 幂等键）→ 校验（大小→MIME→扩展名）→ 流式落盘（服务端 UUID 命名）→ 重算 sha256 → `sys_file` 落库（事务）→ `FileUploadedEvent`（AFTER_COMMIT）。
+**上传**：Controller（`@PreAuthorize` 鉴权 → 幂等键）→ 校验（大小→MIME→扩展名）→ 流式落盘（服务端 UUID 命名）→ 重算 sha256 → `file` 落库（事务）→ `FileUploadedEvent`（AFTER_COMMIT）。
 **补偿**：落盘成功但 DB 事务回滚 → **删除已落盘文件**（`try/catch` 补偿，失败仅记 ERROR + 留孤儿，由 3.7 的孤儿清理兜底）；DB 成功而事件订阅失败 → **不回滚**（AFTER_COMMIT 语义，仅记日志）。
 
-**定时任务执行**：调度触发 → ShedLock 抢锁（抢不到直接 `SKIPPED`）→ `sys_job_log(RUNNING, trace_id)` → `JobHandler.execute`（超时监控）→ 更新日志（`SUCCESS`/`FAILED`/`TIMEOUT`）→ 失败按重试策略重投 → 连续失败达阈值发告警。锁释放失败 → ERROR 日志，`lockAtMostFor` 到期自动释放兜底。
+**定时任务执行**：调度触发 → ShedLock 抢锁（抢不到直接 `SKIPPED`）→ `job_run(RUNNING, trace_id)` → `JobHandler.execute`（超时监控）→ 更新日志（`SUCCESS`/`FAILED`/`TIMEOUT`）→ 失败按重试策略重投 → 连续失败达阈值发告警。锁释放失败 → ERROR 日志，`lockAtMostFor` 到期自动释放兜底。
 
-**异步导入**：`submitImport`（参数校验 + 同文件运行中去重）→ `sys_async_task(PENDING)` → 线程池 → 流式读 + 校验 + 分批/整批事务 → 每 500 行更新进度 → 错误文件 → `FINISHED`/`PARTIAL`/`FAILED`。
+**异步导入**：`submitImport`（参数校验 + 同文件运行中去重）→ `excel_task(PENDING)` → 线程池 → 流式读 + 校验 + 分批/整批事务 → 每 500 行更新进度 → 错误文件 → `FINISHED`/`PARTIAL`/`FAILED`。
 
 **参数读取/变更**：读 = 本地缓存 → DB → 默认值；变更 = DB 事务 → 本地缓存精确失效 → 事件（AFTER_COMMIT）。
 
@@ -475,7 +488,7 @@ class FileOrphanCleanHandler implements JobHandler { ... }
 1. `mvn -B verify` 全绿：单测（覆盖率：`application`+`domain` 行覆盖 ≥80%，C-11）、ArchUnit（P0 十条 + 本册新增两条）、许可证门。
 2. 集成测试（Testcontainers：PostgreSQL 17 + Redis 7）逐条通过：参数热更新生效（改 DB → 60s 内或事件路径即时生效）、字典缓存失效、上传→下载往返 sha256 一致、越权下载 20013、路径穿越被拒、超限 20010、类型白名单 20011；任务注册/手动 Run/日志/失败重试/连续失败告警；导入 10 万行成功且**记录实测耗时**（NFR-PERF-04 证据）；导出超限报 20022；两级缓存空值占位生效。
 3. 依赖矩阵断言：`platform` 不依赖任何模块（ArchUnit 白名单只含 `com.eaio.common.api..` 与三方包）。
-4. `sys_job` 里**不存在**未注册 `handler_code` 的行（C-12 的机械证据）。
+4. `job` 里**不存在**未注册 `handler_code` 的行（C-12 的机械证据）。
 
 ---
 
@@ -514,11 +527,11 @@ com.eaio.iam
 | 项 | 默认 | 说明 |
 |---|---|---|
 | 失败锁定 | 连续 **5** 次锁 **15 分钟** | 计数键 `eaio:{env}:iam:login:fail:{username}`；成功登录清零 |
-| 同 IP 限流 | 10 次/分钟 | `RateLimiter`（common.redis），超限 21105 |
+| 同 IP 限流 | 10 次/分钟 | `RateLimiter`（common.redis），超限 21002 |
 | 密码策略 | ≥12 位，含大小写+数字+符号，不含用户名 | `eaio.iam.password.*`；**等保三级**（NFR-SEC-06） |
-| 密码有效期 | 90 天 | 到期返回 21106 强制改密（`0` = 不限） |
+| 密码有效期 | 90 天 | 到期返回 21072 强制改密（`0` = 不限） |
 | 历史密码 | 不可重复最近 5 次 | 只存哈希 |
-| 枚举防护 | 账号不存在与密码错误**返回同一码** `21101` | 不泄漏账号是否存在 |
+| 枚举防护 | 账号不存在与密码错误**返回同一码** `21001` | 不泄漏账号是否存在 |
 | 会话上限 | 每用户 5 个并发会话 | 超出踢最早（记 `LogoutEvent` 原因 `EVICTED`） |
 | 验证码 | 登录失败 ≥3 次后必填；TTL 2 分钟；**一次性**（`getAndDelete`） | 图形码用 JDK `BufferedImage` 生成（无新依赖）；启动加 `java.awt.headless=true` |
 | MFA | `eaio.iam.mfa.enabled` 默认 **false** | TOTP（RFC 6238）**用 JDK `HmacSHA1` 自实现**（约 40 行），**必须用 RFC 6238 附录 B 官方测试向量写单测**；恢复码 10 个一次性 |
@@ -537,7 +550,7 @@ com.eaio.iam
 - **ABAC**：`permission.condition_json`（属性条件，如"金额 ≤ 1 万"），M2–M5 只实现**结构化条件的求值框架 + 少数内置算子**（`eq/lt/gt/in` 与 `deptId/orgId/ownerId` 变量）；复杂表达式留 P2。
 - **数据权限（六值，裁决 C-3）**：`role.data_scope ∈ {SELF, DEPT, ORG, ORG_AND_SUB, ALL, CUSTOM}`，`CUSTOM` 由 `data_scope_rule` 明细（组织/部门/责任人）。
 - **字段权限**：`field_permission(role_id, resource, field, access ∈ {VISIBLE, MASK, HIDDEN})`；业务 DTO 字段标 `@FieldPermission(resource=..., field=...)`（注解在 `iam.api`）；序列化时由 **iam 提供的 Jackson 序列化修改器**（在 app 装配注册）按当前用户规则裁剪/脱敏（明文脱敏复用 common 的 `SensitiveUtils`）。
-- **SoD（FR-SEC-12）**：`sod_rule` 定义互斥权限对（如"合同创建"vs"合同审核"）；`SoDCheckApi.check(userId, permCode)`。**两个校验点**：(1) 分配角色时 —— 违规**拒绝分配**（21110）；(2) 高危操作执行时（`@SoDCheck` 注解）。
+- **SoD（FR-SEC-12）**：`sod_rule` 定义互斥权限对（如"合同创建"vs"合同审核"）；`SoDCheckApi.check(userId, permissionCodes)`（结果里返回 21040）。**两个校验点**：(1) 分配角色时 —— 违规**拒绝分配**（21040）；(2) 高危操作执行时（`@SoDCheck` 注解）。
 - **权限码**：`<module>:<resource>:<action>`（如 `platform:config:add`、`iam:user:reset`），存 `permission.perm_code`，**唯一约束**；platform/iam/业务模块的 Controller 都直接写字符串（3.3 规则 4）。
 - **授权缓存**：用户权限集合（Caffeine 60s + Redis 5min）；`UserRoleChangedEvent`/`PermissionChangedEvent` 触发失效。
 - **权限变更留痕（FR-SEC-13）**：角色/权限/用户角色的增删改**全部发事件**（含变更前后值）→ audit WORM；iam 不留自己的审计表。
@@ -547,8 +560,8 @@ com.eaio.iam
 **无限级组织树**：`org_node`（`parent_id`、`node_type ∈ GROUP|COMPANY|DEPT|TEAM`、`code`（唯一）、`level`、`sort_no`、`status`）+ **闭包表** `org_node_path(ancestor_id, descendant_id, depth)`（唯一键 `(ancestor_id, descendant_id)`，反查索引用 `(descendant_id, depth)`）。
 
 - **闭包表维护在应用层、同一事务内**（不用 DB 触发器：可测试、可迁移、可回滚）：新增节点 = 自身 depth 0 + 父节点的全部祖先 depth+1；移动子树 = 删除"子树 × 子树"内部路径后重建。
-- **移动守卫**：目标节点不得是自己的后代（查 `org_node_path`，违规报 `21121`）；子树节点数 > `eaio.iam.org-move-max-nodes`（默认 5000）时**明确报错**要求分批（M2–M5 不做异步移动，不静默半移动）。
-- **生命周期四态（裁决 C-2）**：`筹备(PREPARING) → 运营(RUNNING) → 注销(CANCELLED) → 归档(ARCHIVED)`（**注销 ≠ 归档**：注销触发权限清理与踢下线，归档只读冻结）；非法跃迁报 `21130`；注销前置校验：**无在职人员 + 无未完成审批**（审批校验器留 SPI，workflow 落地后接；未接时按"无在职人员"判定并在返回值里注明校验范围）；`ARCHIVED` 只读（写操作报 `21131`）。
+- **移动守卫**：目标节点不得是自己的后代（查 `org_node_path`，违规报 `21011`）；子树节点数 > `eaio.iam.org-move-max-nodes`（默认 5000）时**明确报错**要求分批（M2–M5 不做异步移动，不静默半移动）。
+- **生命周期四态（裁决 C-2）**：`筹备(PREPARING) → 运营(RUNNING) → 注销(CANCELLED) → 归档(ARCHIVED)`（**注销 ≠ 归档**：注销触发权限清理与踢下线，归档只读冻结）；非法跃迁报 `21013`；注销前置校验：**无在职人员 + 无未完成审批**（审批校验器留 SPI，workflow 落地后接；未接时按"无在职人员"判定并在返回值里注明校验范围）；`ARCHIVED` 只读（写操作报 `21013`）。
 - **人员**：`sys_user`（见 5.4.2）+ `org_position`（岗位定义：`org_id`/`name`/`code`）+ `user_org`（**多组织兼任**：`user_id`/`org_id`/`position_id`/`is_primary`/`status`/`joined_at`/`left_at`）—— FR-HR-08 的"多组织兼任"与"入转调离"由 `user_org` 承载，**不往 `sys_user` 堆组织字段**（只有 `primary_org_id` 便于列表展示）。
 - **通讯录**（FR-HR-07）：`EmployeeApi` 支持"按组织子树 + 关键词"查询；手机/邮箱按 4.3 字段权限裁剪。
 - `OrgChangedEvent`（组织或任职变动）→ audit + 数据权限缓存失效。
@@ -567,7 +580,7 @@ record TenantCtx(long userId, String username, long orgId, String orgPath,
 
 **数据权限 SQL 改写（唯一落点 + 关键决策 C-22）**：MyBatis-Plus `DataPermissionInterceptor` + `MultiDataPermissionHandler`（由 iam 实现、app 装配）；Mapper 方法用 `@DataScope(resource, orgColumn, userColumn)` **显式标注**（opt-in）。
 
-> **裁决 C-22（本册新增，解决 P0 "禁跨 Schema SQL" 与数据权限的冲突）**：数据权限过滤**不使用跨 Schema 子查询**。`TenantCtx.orgIds` 在**认证时由 iam 解析并缓存**（Redis，与权限缓存同生命周期），过滤器只生成 `orgColumn IN (:orgIds)` 这类**同 Schema 条件**。理由：P0/HLD 明确"禁跨 Schema SQL"，为数据权限破例会把例外变成常态；而组织子树 id 集合在本项目量级（公司/部门数千以内）完全可控。**上限保护**：`orgIds` 超过 `eaio.iam.data-scope.max-org-ids`（默认 2000）时**报错 `21120`** 并提示改用 `ALL` 角色范围或 `CUSTOM` 规则，**不生成超长 IN**。
+> **裁决 C-22（本册新增，解决 P0 "禁跨 Schema SQL" 与数据权限的冲突）**：数据权限过滤**不使用跨 Schema 子查询**。`TenantCtx.orgIds` 在**认证时由 iam 解析并缓存**（Redis，与权限缓存同生命周期），过滤器只生成 `orgColumn IN (:orgIds)` 这类**同 Schema 条件**。理由：P0/HLD 明确"禁跨 Schema SQL"，为数据权限破例会把例外变成常态；而组织子树 id 集合在本项目量级（公司/部门数千以内）完全可控。**上限保护**：`orgIds` 超过 `eaio.iam.data-scope.max-org-ids`（默认 2000）时**报错 `21037`** 并提示改用 `ALL` 角色范围或 `CUSTOM` 规则，**不生成超长 IN**。
 
 SQL 片段口径：`SELF → userColumn = :userId`；`DEPT → orgColumn = 用户所属部门`；`ORG → orgColumn = :orgId`；`ORG_AND_SUB → orgColumn IN (:orgIds)`；`ALL → 无附加条件`；`CUSTOM → orgColumn IN (:ruleOrgIds) OR userColumn IN (:ruleUserIds)`。多个角色**取并集**（授权取并、DENY 不参与数据范围）。
 **安全兜底（必须实现）**：带 `@DataScope` 的方法若取不到 `TenantCtx`（或未认证）→ **抛 10401 拒绝执行**，绝不"降级为不过滤"。
@@ -575,59 +588,114 @@ SQL 片段口径：`SELF → userColumn = :userId`；`DEPT → orgColumn = 用�
 ### 4.6 对外契约（`com.eaio.iam.api`）
 
 ```java
-public interface AuthnApi {           // 供 app/其他模块在非 HTTP 场景（任务、消息）构造身份
-    Optional<TenantCtxProvider.AuthenticatedUser> findUser(long userId);
+// 权威签名以 04-…-P1-iam.md 第 7 章为准；本册只镜像，改签名先改 iam 册
+public interface AuthnApi {                        // 非 HTTP 场景（任务、消息）构造身份
+    TokenDTO login(LoginCmd cmd);
+    TokenDTO refresh(RefreshCmd cmd);
+    void logout(String refreshToken);
+    void revoke(long userId);                      // 全量踢下线（token_version++）
+    MfaEnrollDTO mfaEnroll(long userId);
+    void mfaVerify(long userId, String totpCode);   // 校验并激活（绑定确认）
+    void changePassword(long userId, String oldPassword, String newPassword);
 }
-public interface TenantCtxProvider { TenantCtx current(); TenantCtx require(); }   // 全模块使用
-public interface PermissionApi { boolean has(String permCode); boolean hasAll(String... permCodes); }
-public interface RoleApi { List<RoleRef> rolesOf(long userId, long orgId); }
-public interface DataScopeApi { DataScope resolve(long userId, long orgId, String resource); }
-public interface SoDCheckApi { void check(long userId, String permCode); }          // 违规抛 21110
+public interface TenantCtxProvider {                // 全模块使用
+    Optional<TenantContext> current();
+    TenantContext require();                        // 无上下文抛 21084
+    Optional<Long> currentOrgId();
+    void runAs(long orgId, Runnable action);
+}
+public interface UserApi {
+    Optional<UserDTO> get(long userId);
+    Optional<UserDTO> getByUsername(String username);
+    PageResult<UserDTO> getPage(UserQuery query);
+    long add(UserSaveCmd cmd);
+    void up(UserSaveCmd cmd);
+    void del(long userId);
+    void disable(long userId, boolean disabled, String reason);
+    String resetPassword(long userId);              // 返回一次性初始口令
+    List<UserBriefDTO> batchGet(Collection<Long> userIds);
+}
+public interface EmployeeApi {
+    Optional<EmployeeDTO> getByUserId(long userId);
+    PageResult<EmployeeDTO> getPage(EmployeeQuery query);
+    void up(EmployeeSaveCmd cmd);
+}
 public interface OrgApi {
-    Optional<OrgNode> node(long orgId);
-    List<OrgNode> children(long orgId);
-    List<Long> subtreeIds(long orgId);       // 闭包表查询
-    String path(long orgId);
+    Optional<OrgNodeDTO> get(long nodeId);
+    OrgTreeDTO tree(Long rootId, int depth);        // depth 必填（1..6）
+    List<OrgNodeDTO> children(long nodeId);
+    List<OrgNodeDTO> descendants(long nodeId);
+    List<Long> subtreeIds(long nodeId);             // 闭包表查询
+    String pathOf(long nodeId);
+    PageResult<OrgNodeDTO> getPage(OrgQuery query);
+    long add(OrgSaveCmd cmd);
+    void up(OrgSaveCmd cmd);
+    void move(OrgMoveCmd cmd);
+    void del(long nodeId);
 }
-public interface UserApi { Optional<UserRef> user(long userId); List<UserRef> users(Collection<Long> ids); }
-public interface EmployeeApi { PageResult<EmployeeRef> search(EmployeeQuery query); }
-public interface OrgLifecycleApi { void transition(long orgId, OrgStatus target, String reason); }
+public interface OrgLifecycleApi {
+    OrgLifecycleDTO transition(long nodeId, String targetState, String reason);
+    OrgDeregisterPreviewDTO deregisterPreview(long nodeId);
+}
+public interface RoleApi {
+    Optional<RoleDTO> get(long roleId);
+    PageResult<RoleDTO> getPage(RoleQuery query);
+    long add(RoleSaveCmd cmd);
+    void up(RoleSaveCmd cmd);
+    void del(long roleId);
+    void assignPermissions(long roleId, List<Long> permissionIds);
+    void assignUsers(RoleAssignCmd cmd);            // SoD 校验点 1
+    List<RoleDTO> inheritedRoles(long roleId);      // 继承链（含有效权限合并）
+}
+public interface PermissionApi {
+    boolean check(long userId, String permissionCode);
+    boolean checkAll(long userId, Collection<String> codes);
+    List<String> listPermissions(long userId);
+    List<MenuNodeDTO> menuTree(long userId);
+    DataScopeDTO resolveDataScope(long userId, String resourceCode, Long orgId);
+    Map<String, FieldPermissionDTO> filterFields(long userId, String resourceCode, Collection<String> fields);
+}
+public interface DataScopeApi {
+    List<DataScopeRuleDTO> rules(Long roleId, Long userId);   // 二者传其一
+    long save(DataScopeRuleSaveCmd cmd);
+    void del(long ruleId);
+}
+public interface SoDCheckApi {
+    SoDCheckResultDTO check(long userId, Collection<String> permissionCodes);  // 违规在结果里返回 21040
+    SoDCheckResultDTO checkAssign(RoleAssignCmd cmd);
+    List<SoDRuleDTO> listRules();
+}
 ```
-**规则**：同 3.3（接口+record、只增不改、`api` 不暴露实体/Mapper/JWT 类型、Controller 用权限码字符串）。`@FieldPermission` 与 `@DataScope` 注解也放在 `iam.api`（业务模块可依赖通用能力层的 api）。**JWT 类型与密钥只允许出现在 iam 的 `infrastructure/security`**。
+**规则（与 iam 册同源）**：接口名与方法签名以 iam 单模块册第 7 章为唯一权威，本册仅镜像；以下同 3.3（接口+record、只增不改、`api` 不暴露实体/Mapper/JWT 类型、Controller 用权限码字符串）。`@FieldPermission` 与 `@DataScope` 注解也放在 `iam.api`（业务模块可依赖通用能力层的 api）。**JWT 类型与密钥只允许出现在 iam 的 `infrastructure/security`**。
 
-### 4.7 错误码（iam 段 21000–21999，本册分配）
+### 4.7 错误码（iam 段 21000–21999）
 
-| 码 | 枚举 | 消息 | 场景 |
-|---|---|---|---|
-| 21100 | `LOGIN_FAILED` | 用户名或密码错误 | 含账号不存在（枚举防护） |
-| 21101 | `ACCOUNT_LOCKED` | 账号已锁定，请稍后重试 | 连续失败锁定 |
-| 21102 | `ACCOUNT_DISABLED` | 账号已停用 | status=停用/离职 |
-| 21103 | `CAPTCHA_INVALID` | 验证码错误或已过期 | 一次性消费 |
-| 21104 | `MFA_REQUIRED` / `MFA_INVALID` | 需要二次验证 / 验证码错误 | 拆两条：`21104` 需要、`21105` 无效 |
-| 21106 | `PASSWORD_EXPIRED` | 密码已过期，请修改 | 90 天策略 |
-| 21107 | `TOKEN_INVALID` | 令牌无效或已过期 | 验签/过期失败 |
-| 21108 | `TOKEN_REVOKED` | 令牌已撤销 | 黑名单命中 |
-| 21109 | `REFRESH_TOKEN_INVALID` | 刷新令牌无效 | 刷新失败 |
-| 21110 | `SOD_CONFLICT` | 违反职责分离约束 | SoD 校验失败（消息含冲突权限） |
-| 21111 | `PERMISSION_DENIED` | 无权执行该操作 | 权限点缺失（与通用 10403 区分：带权限码上下文） |
-| 21112 | `DATA_SCOPE_DENIED` | 无数据权限 | `@DataScope` 无上下文/越范围 |
-| 21120 | `DATA_SCOPE_TOO_WIDE` | 数据权限组织范围过大 | 超过 `max-org-ids`（C-22） |
-| 21121 | `ORG_TREE_CYCLE` | 组织移动会形成环 | 目标为自身后代 |
-| 21122 | `ORG_MOVE_TOO_LARGE` | 组织子树过大，需分批移动 | 超过阈值 |
-| 21123 | `ORG_CODE_DUPLICATED` | 组织编码已存在 | 唯一约束 |
-| 21124 | `ORG_NOT_FOUND` | 组织不存在 | orgId 无效 |
-| 21130 | `ORG_STATUS_TRANSITION_INVALID` | 组织状态跃迁非法 | 状态机校验 |
-| 21131 | `ORG_ARCHIVED_READONLY` | 组织已归档，不可修改 | 归档只读 |
-| 21132 | `ORG_HAS_ACTIVE_MEMBERS` | 组织下仍有在职人员 | 注销前置 |
-| 21140 | `USER_NOT_FOUND` | 用户不存在 | — |
-| 21141 | `USERNAME_DUPLICATED` | 用户名已存在 | 唯一约束 |
-| 21142 | `PASSWORD_POLICY_VIOLATION` | 密码不符合安全策略 | 复杂度/历史/含用户名 |
-| 21143 | `PASSWORD_REUSED` | 不能使用最近使用过的密码 | 历史 5 次 |
-| 21144 | `ROLE_IN_USE` | 角色已被分配，不能删除 | 有 `user_role` |
-| 21145 | `IDP_BINDING_REQUIRED` | 该外部身份未绑定本地账号 | OIDC/LDAP 首次登录（默认拒绝） |
-| 21146 | `IDENTITY_PROVIDER_ERROR` | 外部身份提供方异常 | OIDC/LDAP 通信失败 |
+> **本册不自持 iam 号表**：`eaio_iam` 段（21000–21999）的**唯一号源是 `04-企业级一体化管理系统-e-aio-详细设计说明书-P1-iam.md` 表 7-1**（已分配 `21001–21092`，其余留空，空号不回收）。本册旧版自持的 `21100–21146` 号表**作废**，正文引用已按下表改写；platform 段仍见 3.12（20000–20999）。
 
-> 21104/21105 拆分理由：前端要区分"提示输入 TOTP"与"验证码错误"；若合成一条，用户无法判断下一步。
+**本册正文引用的 iam 码 → iam 册表 7-1**
+
+| 本册旧号（作废） | iam 册表 7-1 | 本册正文位置 |
+|---|---|---|
+| `21100 LOGIN_FAILED` | `21001 LOGIN_FAILED` | 4.3 认证（枚举防护：账号不存在与密码错误同码） |
+| `21101 ACCOUNT_LOCKED` | `21002 ACCOUNT_LOCKED` | 4.3 登录策略（连续失败锁定、同 IP 限流） |
+| `21102 ACCOUNT_DISABLED` | `21003 ACCOUNT_DISABLED` | 4.3 登录策略 |
+| `21103 CAPTCHA_INVALID` | `21004 CAPTCHA_INVALID` | 4.3 验证码 |
+| `21104 MFA_REQUIRED` | **不占码**（由 `TokenDTO.mfaRequired` 表达，正常流程不是错误） | 4.3 MFA |
+| `21105 MFA_INVALID` | `21007 MFA_VERIFY_FAILED` | 4.3 MFA 校验 |
+| `21106 PASSWORD_EXPIRED` | `21072 PASSWORD_EXPIRED` | 4.3 密码 90 天策略 |
+| `21107 TOKEN_INVALID` / `21108 TOKEN_REVOKED` / `21109 REFRESH_TOKEN_INVALID` | `21005` / `21070`（缺令牌仍用通用 `10401`） / `21006` | 4.3 令牌 |
+| `21110 SOD_CONFLICT` | `21040 SOD_CONFLICT` | 4.5 SoD（分配拒绝、执行拦截） |
+| `21111 PERMISSION_DENIED` / `21112 DATA_SCOPE_DENIED` | `21031` / `21014` | 4.5 权限与数据权限 |
+| `21120 DATA_SCOPE_TOO_WIDE` | `21037 DATA_SCOPE_TOO_WIDE` | 裁决 C-22（`orgIds` 超上限，结论不变） |
+| `21121 ORG_TREE_CYCLE` / `21122 ORG_MOVE_TOO_LARGE` / `21123 ORG_CODE_DUPLICATED` / `21124 ORG_NOT_FOUND` | `21011` / `21016` / `21015` / `21010` | 4.5 组织 |
+| `21130 ORG_STATUS_TRANSITION_INVALID` / `21131 ORG_ARCHIVED_READONLY` | `21013 ORG_STATE_NOT_ALLOWED`（两者**合并**） | 4.5 生命周期四态与归档只读 |
+| `21132 ORG_HAS_ACTIVE_MEMBERS` | `21018 ORG_HAS_ACTIVE_MEMBERS` | 4.5 注销前置 |
+| `21140 USER_NOT_FOUND` / `21141 USERNAME_DUPLICATED` | `21063` / `21060` | 4.4 用户 |
+| `21142 PASSWORD_POLICY_VIOLATION` / `21143 PASSWORD_REUSED` | `21008`（**合并**） | 4.3 密码策略与历史密码 |
+| `21144 ROLE_IN_USE` | `21024 ROLE_IN_USE` | 4.5 角色 |
+| `21145 IDP_BINDING_REQUIRED` / `21146 IDENTITY_PROVIDER_ERROR` | `21054` / `21056 IDP_UNAVAILABLE` | 4.6 外部身份源 |
+
+> **与 iam 册的有意收敛（本册不另行主张独立码）**：`MFA_REQUIRED` 改为响应字段而非错误码；`ORG_ARCHIVED_READONLY` 并入 `ORG_STATE_NOT_ALLOWED`；`PASSWORD_REUSED` 并入 `PASSWORD_POLICY_VIOLATION`；`TOKEN_REVOKED` 用会话撤销码 `21070`。
 
 ### 4.8 关键流程
 
@@ -656,7 +724,7 @@ public interface OrgLifecycleApi { void transition(long orgId, OrgStatus target,
 4. SoD 两个校验点各有用例（分配被拒 / 操作被拒）。
 5. 字段权限：同一 DTO 在两个角色下手机号分别明文/掩码/不出现。
 6. 数据权限兜底：`@DataScope` 方法在无上下文时抛 10401（**防"忘了上下文 = 全量"**）。
-7. `orgIds` 超上限报 21120；组织成环移动报 21121；归档组织写入报 21131。
+7. `orgIds` 超上限报 21037；组织成环移动报 21011；归档组织写入报 21013。
 
 ---
 
@@ -666,10 +734,10 @@ public interface OrgLifecycleApi { void transition(long orgId, OrgStatus target,
 
 1. **Schema**：`eaio_platform` / `eaio_iam`，脚本内对象**显式 Schema 限定**；**不建跨 Schema 外键**；跨模块引用一律走 `api`（裁决 C-22：数据权限也不跨 Schema）。
 2. **主键**：`id BIGINT`（雪花 `IdGenerator`，`IdType.INPUT`），**不用自增**（信创/分布式留口）。`workerId` 由 `eaio.id.worker-id` 配置，多实例必须区分。
-3. **审计列（每张业务表都有，共 7 个）**：`id`、`create_by BIGINT`、`create_time TIMESTAMPTZ`、`update_by BIGINT`、`update_time TIMESTAMPTZ`、`version INT NOT NULL DEFAULT 0`（乐观锁 `@Version`）、`deleted SMALLINT NOT NULL DEFAULT 0`（逻辑删除 `@TableLogic`）。
+3. **统一列（每张业务表都有，共 7 个）**：`id BIGINT`（雪花）、`created_at TIMESTAMPTZ`、`created_by BIGINT`、`updated_at TIMESTAMPTZ`、`updated_by BIGINT`、`version INT NOT NULL DEFAULT 0`（乐观锁 `@Version`）、`deleted BOOLEAN NOT NULL DEFAULT false`（逻辑删除 `@TableLogic`）。**列名口径以 P1 批次总册 3.5 为准**（`created_at`/`created_by`/`updated_at`/`updated_by`），旧写法 `create_time`/`create_by` 已废止。
 4. **派生表例外**：`org_node_path` 是闭包表（派生数据），**不带审计列与 `deleted`**，重建而非删除。
 5. **时间**：一律 `TIMESTAMPTZ`，**UTC 存储**，展示层按时区转换（`DateUtils`）。
-6. **布尔**：`SMALLINT`（0/1），**不用 PG `boolean`**（信创留口）。
+6. **布尔**：业务布尔标志用 `SMALLINT`（0/1），**不用 PG `boolean`**（信创留口）；**唯一例外**是统一列的 `deleted`，用 `BOOLEAN NOT NULL DEFAULT false`（与批次总册 3.5 一致）。
 7. **枚举**：`VARCHAR(16|32)` + 应用层枚举，**不用 PG enum 类型**（改值要 DDL，迁移成本高）。
 8. **JSON 列**：一律 `TEXT` + 应用层 `JsonUtils` 校验；**不用 `JSONB`**（信创留口，5.1.3）。
 9. **唯一约束**：用 **partial unique index（`WHERE deleted = 0`）**——普通唯一索引会让"逻辑删除后的同名记录"永远建不出来。
@@ -695,12 +763,12 @@ public interface OrgLifecycleApi { void transition(long orgId, OrgStatus target,
 
 | 模块 | 表 | 归属 | 阶段 | 说明 |
 |---|---|---|---|---|
-| platform | `sys_config` | 本册新增 | M1 | 参数中心（含分级） |
-| platform | `sys_dict_type` / `sys_dict_data` | 本册新增 | M1 | 字典 |
-| platform | `sys_file` | 本册新增 | M1 | 统一文件（AES 不适用，密钥类不落库） |
-| platform | `sys_job` / `sys_job_log` | 本册新增 | M2 | 定时任务与执行日志 |
-| platform | `sys_async_task` | 本册新增 | M2 | 导入/导出异步任务（**一表覆盖两向**） |
-| platform | `sys_message_template` / `sys_message` | 本册新增 | M3 | 消息模板与站内消息 |
+| platform | `param` | 本册新增 | M1 | 参数中心（含分级） |
+| platform | `dict_type` / `dict_item` | 本册新增 | M1 | 字典 |
+| platform | `file` | 本册新增 | M1 | 统一文件（AES 不适用，密钥类不落库） |
+| platform | `job` / `job_run` | 本册新增 | M2 | 定时任务与执行日志 |
+| platform | `excel_task` | 本册新增 | M2 | 导入/导出异步任务（**一表覆盖两向**） |
+| platform | `notify_template` / `notice` | 本册新增 | M3 | 消息模板与站内消息 |
 | iam | `sys_user` | **C-14 改名**（HLD 的 `user` 是保留字） | M2 | 用户主档 |
 | iam | `user_password_history` / `user_mfa` / `identity_provider` | 本册新增 | M2/M3 | 密码历史、TOTP、外部身份绑定 |
 | iam | `org_node` / `org_node_path` | HLD §4.1.1 点名 | M2 | 无限级组织树 + 闭包表 |
@@ -717,36 +785,55 @@ public interface OrgLifecycleApi { void transition(long orgId, OrgStatus target,
 
 | 表 | 业务列（类型 / 约束） | 索引与唯一 |
 |---|---|---|
-| `sys_config` | `config_key VARCHAR(128) NOT NULL`、`config_value TEXT`、`value_type VARCHAR(16) NOT NULL DEFAULT 'STRING'`、`scope_type VARCHAR(16) NOT NULL DEFAULT 'SYSTEM'`、`org_id BIGINT NOT NULL DEFAULT 0`（0 = 系统级）、`config_group VARCHAR(64)`、`description VARCHAR(255)`、`is_builtin SMALLINT NOT NULL DEFAULT 0`、`is_encrypted SMALLINT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(config_key, org_id) WHERE deleted=0`；idx `(config_group)` |
-| `sys_dict_type` | `type_code VARCHAR(64) NOT NULL`、`type_name VARCHAR(64) NOT NULL`、`status`、`remark VARCHAR(255)` | UNIQUE `(type_code) WHERE deleted=0` |
-| `sys_dict_data` | `type_code VARCHAR(64) NOT NULL`、`dict_value VARCHAR(64) NOT NULL`、`dict_label VARCHAR(128) NOT NULL`、`sort_no INT NOT NULL DEFAULT 0`、`ext_json TEXT`、`status`、`remark` | UNIQUE `(type_code, dict_value) WHERE deleted=0` |
-| `sys_file` | `original_name VARCHAR(255)`、`stored_name VARCHAR(128) NOT NULL`、`storage_type VARCHAR(16) NOT NULL DEFAULT 'LOCAL'`、`relative_path VARCHAR(512) NOT NULL`、`content_type VARCHAR(128)`、`file_size BIGINT NOT NULL`、`sha256 CHAR(64) NOT NULL`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`uploader_id BIGINT NOT NULL`、`uploader_org_id BIGINT NOT NULL`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'` | idx `(sha256)`、`(biz_type, biz_id)`、`(uploader_id)`、`(status, create_time)` |
-| `sys_job` | `job_code VARCHAR(64) NOT NULL`、`job_name VARCHAR(128) NOT NULL`、`handler_code VARCHAR(128) NOT NULL`、`cron VARCHAR(64) NOT NULL`、`timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai'`、`params_json TEXT`、`timeout_seconds INT NOT NULL DEFAULT 300`、`misfire_policy VARCHAR(16) NOT NULL DEFAULT 'SKIP'`、`retry_times SMALLINT NOT NULL DEFAULT 0`、`retry_interval_seconds INT NOT NULL DEFAULT 60`、`status SMALLINT NOT NULL DEFAULT 1`、`last_fire_time TIMESTAMPTZ`、`next_fire_time TIMESTAMPTZ`、`remark VARCHAR(255)` | UNIQUE `(job_code) WHERE deleted=0`；idx `(status, next_fire_time)` |
-| `sys_job_log` | `job_code VARCHAR(64) NOT NULL`、`fire_time TIMESTAMPTZ NOT NULL`、`start_time TIMESTAMPTZ`、`end_time TIMESTAMPTZ`、`duration_ms BIGINT`、`status VARCHAR(16) NOT NULL`、`result_summary VARCHAR(512)`、`error_stack TEXT`、`trace_id VARCHAR(64)`、`trigger_type VARCHAR(16) NOT NULL DEFAULT 'AUTO'` | idx `(job_code, fire_time DESC)`、`(status, fire_time DESC)`；**日志表按 `fire_time` 定期清理，不参与逻辑删除** |
-| `sys_async_task` | `task_id VARCHAR(64) NOT NULL`、`task_type VARCHAR(16) NOT NULL`、`biz_type VARCHAR(64) NOT NULL`、`file_id BIGINT`、`result_file_id BIGINT`、`status VARCHAR(16) NOT NULL`、`total_rows BIGINT`、`success_rows BIGINT`、`fail_rows BIGINT`、`progress INT NOT NULL DEFAULT 0`、`params_json TEXT`、`error_summary TEXT`、`operator_id BIGINT NOT NULL`、`started_at TIMESTAMPTZ`、`finished_at TIMESTAMPTZ`、`trace_id VARCHAR(64)` | UNIQUE `(task_id) WHERE deleted=0`；idx `(operator_id, create_time DESC)`、`(status)` |
-| `sys_message_template` | `template_code VARCHAR(64) NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`title_template VARCHAR(255) NOT NULL`、`content_template TEXT NOT NULL`、`variables_json TEXT`、`status` | UNIQUE `(template_code) WHERE deleted=0` |
-| `sys_message` | `receiver_id BIGINT NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`template_code VARCHAR(64)`、`title VARCHAR(255) NOT NULL`、`content TEXT NOT NULL`、`read_flag SMALLINT NOT NULL DEFAULT 0`、`read_time TIMESTAMPTZ`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`trace_id VARCHAR(64)` | idx `(receiver_id, read_flag, create_time DESC)` |
+| `param` | `config_key VARCHAR(128) NOT NULL`、`config_value TEXT`、`value_type VARCHAR(16) NOT NULL DEFAULT 'STRING'`、`scope_type VARCHAR(16) NOT NULL DEFAULT 'SYSTEM'`、`org_id BIGINT NOT NULL DEFAULT 0`（0 = 系统级）、`config_group VARCHAR(64)`、`description VARCHAR(255)`、`is_builtin SMALLINT NOT NULL DEFAULT 0`、`is_encrypted SMALLINT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(config_key, org_id) WHERE deleted = false`；idx `(config_group)` |
+| `dict_type` | `type_code VARCHAR(64) NOT NULL`、`type_name VARCHAR(64) NOT NULL`、`status`、`remark VARCHAR(255)` | UNIQUE `(type_code) WHERE deleted = false` |
+| `dict_item` | `type_code VARCHAR(64) NOT NULL`、`dict_value VARCHAR(64) NOT NULL`、`dict_label VARCHAR(128) NOT NULL`、`sort_no INT NOT NULL DEFAULT 0`、`ext_json TEXT`、`status`、`remark` | UNIQUE `(type_code, dict_value) WHERE deleted = false` |
+| `file` | `original_name VARCHAR(255)`、`stored_name VARCHAR(128) NOT NULL`、`storage_type VARCHAR(16) NOT NULL DEFAULT 'LOCAL'`、`relative_path VARCHAR(512) NOT NULL`、`content_type VARCHAR(128)`、`file_size BIGINT NOT NULL`、`sha256 CHAR(64) NOT NULL`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`uploader_id BIGINT NOT NULL`、`uploader_org_id BIGINT NOT NULL`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'` | idx `(sha256)`、`(biz_type, biz_id)`、`(uploader_id)`、`(status, create_time)` |
+| `job` | `job_code VARCHAR(64) NOT NULL`、`job_name VARCHAR(128) NOT NULL`、`handler_code VARCHAR(128) NOT NULL`、`cron VARCHAR(64) NOT NULL`、`timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai'`、`params_json TEXT`、`timeout_seconds INT NOT NULL DEFAULT 300`、`misfire_policy VARCHAR(16) NOT NULL DEFAULT 'SKIP'`、`retry_times SMALLINT NOT NULL DEFAULT 0`、`retry_interval_seconds INT NOT NULL DEFAULT 60`、`status SMALLINT NOT NULL DEFAULT 1`、`last_fire_time TIMESTAMPTZ`、`next_fire_time TIMESTAMPTZ`、`remark VARCHAR(255)` | UNIQUE `(job_code) WHERE deleted = false`；idx `(status, next_fire_time)` |
+| `job_run` | `job_code VARCHAR(64) NOT NULL`、`fire_time TIMESTAMPTZ NOT NULL`、`start_time TIMESTAMPTZ`、`end_time TIMESTAMPTZ`、`duration_ms BIGINT`、`status VARCHAR(16) NOT NULL`、`result_summary VARCHAR(512)`、`error_stack TEXT`、`trace_id VARCHAR(64)`、`trigger_type VARCHAR(16) NOT NULL DEFAULT 'AUTO'` | idx `(job_code, fire_time DESC)`、`(status, fire_time DESC)`；**日志表按 `fire_time` 定期清理，不参与逻辑删除** |
+| `excel_task` | `task_id VARCHAR(64) NOT NULL`、`task_type VARCHAR(16) NOT NULL`、`biz_type VARCHAR(64) NOT NULL`、`file_id BIGINT`、`result_file_id BIGINT`、`status VARCHAR(16) NOT NULL`、`total_rows BIGINT`、`success_rows BIGINT`、`fail_rows BIGINT`、`progress INT NOT NULL DEFAULT 0`、`params_json TEXT`、`error_summary TEXT`、`operator_id BIGINT NOT NULL`、`started_at TIMESTAMPTZ`、`finished_at TIMESTAMPTZ`、`trace_id VARCHAR(64)` | UNIQUE `(task_id) WHERE deleted = false`；idx `(operator_id, create_time DESC)`、`(status)` |
+| `notify_template` | `template_code VARCHAR(64) NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`title_template VARCHAR(255) NOT NULL`、`content_template TEXT NOT NULL`、`variables_json TEXT`、`status` | UNIQUE `(template_code) WHERE deleted = false` |
+| `notice` | `receiver_id BIGINT NOT NULL`、`channel VARCHAR(16) NOT NULL DEFAULT 'SITE'`、`template_code VARCHAR(64)`、`title VARCHAR(255) NOT NULL`、`content TEXT NOT NULL`、`read_flag SMALLINT NOT NULL DEFAULT 0`、`read_time TIMESTAMPTZ`、`biz_type VARCHAR(64)`、`biz_id VARCHAR(64)`、`trace_id VARCHAR(64)` | idx `(receiver_id, read_flag, create_time DESC)` |
 
 #### 5.4.2 iam（`eaio_iam`）
 
 | 表 | 业务列 | 索引与唯一 |
 |---|---|---|
-| `sys_user`（C-14） | `username VARCHAR(64) NOT NULL`、`password_hash VARCHAR(128) NOT NULL`、`nickname VARCHAR(64)`、`real_name VARCHAR(64)`、`mobile VARCHAR(32)`、`email VARCHAR(128)`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'`、`primary_org_id BIGINT`、`token_version INT NOT NULL DEFAULT 0`、`password_update_time TIMESTAMPTZ`、`last_login_time TIMESTAMPTZ`、`last_login_ip VARCHAR(64)`、`hire_date DATE`、`leave_date DATE`、`remark VARCHAR(255)` | UNIQUE `(username) WHERE deleted=0`；idx `(primary_org_id)`、`(mobile)` |
+| `sys_user`（C-14） | `username VARCHAR(64) NOT NULL`、`password_hash VARCHAR(128) NOT NULL`、`nickname VARCHAR(64)`、`real_name VARCHAR(64)`、`mobile VARCHAR(32)`、`email VARCHAR(128)`、`status VARCHAR(16) NOT NULL DEFAULT 'NORMAL'`、`primary_org_id BIGINT`、`token_version INT NOT NULL DEFAULT 0`、`password_update_time TIMESTAMPTZ`、`last_login_time TIMESTAMPTZ`、`last_login_ip VARCHAR(64)`、`hire_date DATE`、`leave_date DATE`、`remark VARCHAR(255)` | UNIQUE `(username) WHERE deleted = false`；idx `(primary_org_id)`、`(mobile)` |
 | `user_password_history` | `user_id BIGINT NOT NULL`、`password_hash VARCHAR(128) NOT NULL` | idx `(user_id, create_time DESC)` |
-| `user_mfa` | `user_id BIGINT NOT NULL`、`secret VARCHAR(128) NOT NULL`、`recovery_codes TEXT`、`enabled SMALLINT NOT NULL DEFAULT 0`、`bound_time TIMESTAMPTZ` | UNIQUE `(user_id) WHERE deleted=0` |
-| `identity_provider` | `user_id BIGINT NOT NULL`、`provider_type VARCHAR(16) NOT NULL`、`external_id VARCHAR(255) NOT NULL`、`external_username VARCHAR(128)`、`last_sync_time TIMESTAMPTZ` | UNIQUE `(provider_type, external_id) WHERE deleted=0`；idx `(user_id)` |
-| `org_node` | `parent_id BIGINT NOT NULL DEFAULT 0`、`org_code VARCHAR(64) NOT NULL`、`org_name VARCHAR(128) NOT NULL`、`node_type VARCHAR(16) NOT NULL`、`level INT NOT NULL DEFAULT 1`、`sort_no INT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'PREPARING'`、`region_code VARCHAR(16)`、`leader_user_id BIGINT`、`remark VARCHAR(255)` | UNIQUE `(org_code) WHERE deleted=0`；idx `(parent_id)`、`(status)`、`(node_type)` |
+| `user_mfa` | `user_id BIGINT NOT NULL`、`secret VARCHAR(128) NOT NULL`、`recovery_codes TEXT`、`enabled SMALLINT NOT NULL DEFAULT 0`、`bound_time TIMESTAMPTZ` | UNIQUE `(user_id) WHERE deleted = false` |
+| `identity_provider` | `user_id BIGINT NOT NULL`、`provider_type VARCHAR(16) NOT NULL`、`external_id VARCHAR(255) NOT NULL`、`external_username VARCHAR(128)`、`last_sync_time TIMESTAMPTZ` | UNIQUE `(provider_type, external_id) WHERE deleted = false`；idx `(user_id)` |
+| `org_node` | `parent_id BIGINT NOT NULL DEFAULT 0`、`org_code VARCHAR(64) NOT NULL`、`org_name VARCHAR(128) NOT NULL`、`node_type VARCHAR(16) NOT NULL`、`level INT NOT NULL DEFAULT 1`、`sort_no INT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'PREPARING'`、`region_code VARCHAR(16)`、`leader_user_id BIGINT`、`remark VARCHAR(255)` | UNIQUE `(org_code) WHERE deleted = false`；idx `(parent_id)`、`(status)`、`(node_type)` |
 | `org_node_path`（派生表，5.1 第 4 条例外） | `ancestor_id BIGINT NOT NULL`、`descendant_id BIGINT NOT NULL`、`depth INT NOT NULL` | PK `(ancestor_id, descendant_id)`；idx `(descendant_id, depth)` |
-| `org_position` | `org_id BIGINT NOT NULL`、`position_code VARCHAR(64) NOT NULL`、`position_name VARCHAR(128) NOT NULL`、`position_level INT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(org_id, position_code) WHERE deleted=0` |
-| `user_org` | `user_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`、`position_id BIGINT`、`is_primary SMALLINT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'`、`joined_at TIMESTAMPTZ`、`left_at TIMESTAMPTZ` | UNIQUE `(user_id, org_id) WHERE deleted=0`；idx `(org_id)`、`(position_id)` |
-| `role` | `role_code VARCHAR(64) NOT NULL`、`role_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`（单亲继承）、`data_scope VARCHAR(16) NOT NULL DEFAULT 'SELF'`、`role_level INT NOT NULL DEFAULT 0`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(role_code) WHERE deleted=0`；idx `(parent_id)` |
-| `permission` | `perm_code VARCHAR(128) NOT NULL`、`perm_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`、`perm_type VARCHAR(16) NOT NULL`（MENU/BUTTON/API）、`module VARCHAR(32) NOT NULL`、`route_path VARCHAR(255)`、`icon VARCHAR(64)`、`condition_json TEXT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(perm_code) WHERE deleted=0`；idx `(parent_id)`、`(module)` |
-| `role_permission` | `role_id BIGINT NOT NULL`、`permission_id BIGINT NOT NULL`、`effect VARCHAR(8) NOT NULL DEFAULT 'ALLOW'`（ALLOW/DENY，DENY 优先） | UNIQUE `(role_id, permission_id) WHERE deleted=0` |
-| `user_role` | `user_id BIGINT NOT NULL`、`role_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`（角色生效的组织范围）、`granted_by BIGINT`、`granted_at TIMESTAMPTZ` | UNIQUE `(user_id, role_id, org_id) WHERE deleted=0`；idx `(user_id)`、`(role_id)` |
-| `data_scope_rule` | `role_id BIGINT NOT NULL`、`rule_type VARCHAR(16) NOT NULL`（ORG/USER）、`target_id BIGINT NOT NULL` | UNIQUE `(role_id, rule_type, target_id) WHERE deleted=0` |
-| `sod_rule` | `rule_code VARCHAR(64) NOT NULL`、`rule_name VARCHAR(128) NOT NULL`、`perm_code_a VARCHAR(128) NOT NULL`、`perm_code_b VARCHAR(128) NOT NULL`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(rule_code) WHERE deleted=0` |
-| `field_permission` | `role_id BIGINT NOT NULL`、`resource VARCHAR(64) NOT NULL`、`field VARCHAR(64) NOT NULL`、`access VARCHAR(16) NOT NULL`（VISIBLE/MASK/HIDDEN） | UNIQUE `(role_id, resource, field) WHERE deleted=0` |
+| `org_position` | `org_id BIGINT NOT NULL`、`position_code VARCHAR(64) NOT NULL`、`position_name VARCHAR(128) NOT NULL`、`position_level INT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(org_id, position_code) WHERE deleted = false` |
+| `user_org` | `user_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`、`position_id BIGINT`、`is_primary SMALLINT NOT NULL DEFAULT 0`、`status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'`、`joined_at TIMESTAMPTZ`、`left_at TIMESTAMPTZ` | UNIQUE `(user_id, org_id) WHERE deleted = false`；idx `(org_id)`、`(position_id)` |
+| `role` | `role_code VARCHAR(64) NOT NULL`、`role_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`（单亲继承）、`data_scope VARCHAR(16) NOT NULL DEFAULT 'SELF'`、`role_level INT NOT NULL DEFAULT 0`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(role_code) WHERE deleted = false`；idx `(parent_id)` |
+| `permission` | `perm_code VARCHAR(128) NOT NULL`、`perm_name VARCHAR(128) NOT NULL`、`parent_id BIGINT NOT NULL DEFAULT 0`、`perm_type VARCHAR(16) NOT NULL`（MENU/BUTTON/API）、`module VARCHAR(32) NOT NULL`、`route_path VARCHAR(255)`、`icon VARCHAR(64)`、`condition_json TEXT`、`sort_no INT NOT NULL DEFAULT 0`、`status SMALLINT NOT NULL DEFAULT 1` | UNIQUE `(perm_code) WHERE deleted = false`；idx `(parent_id)`、`(module)` |
+| `role_permission` | `role_id BIGINT NOT NULL`、`permission_id BIGINT NOT NULL`、`effect VARCHAR(8) NOT NULL DEFAULT 'ALLOW'`（ALLOW/DENY，DENY 优先） | UNIQUE `(role_id, permission_id) WHERE deleted = false` |
+| `user_role` | `user_id BIGINT NOT NULL`、`role_id BIGINT NOT NULL`、`org_id BIGINT NOT NULL`（角色生效的组织范围）、`granted_by BIGINT`、`granted_at TIMESTAMPTZ` | UNIQUE `(user_id, role_id, org_id) WHERE deleted = false`；idx `(user_id)`、`(role_id)` |
+| `data_scope_rule` | `role_id BIGINT NOT NULL`、`rule_type VARCHAR(16) NOT NULL`（ORG/USER）、`target_id BIGINT NOT NULL` | UNIQUE `(role_id, rule_type, target_id) WHERE deleted = false` |
+| `sod_rule` | `rule_code VARCHAR(64) NOT NULL`、`rule_name VARCHAR(128) NOT NULL`、`perm_code_a VARCHAR(128) NOT NULL`、`perm_code_b VARCHAR(128) NOT NULL`、`status SMALLINT NOT NULL DEFAULT 1`、`remark VARCHAR(255)` | UNIQUE `(rule_code) WHERE deleted = false` |
+| `field_permission` | `role_id BIGINT NOT NULL`、`resource VARCHAR(64) NOT NULL`、`field VARCHAR(64) NOT NULL`、`access VARCHAR(16) NOT NULL`（VISIBLE/MASK/HIDDEN） | UNIQUE `(role_id, resource, field) WHERE deleted = false` |
 
+### 5.4.3 索引与约束命名清单（具体名字，替代匿名写法）
+
+命名规则：索引 `idx_<table>_<cols>`、唯一约束 `uk_<table>_<cols>`、主键 `pk_<table>`、外键 `fk_<table>_<ref>`（批次总册 3.5）。5.4.1/5.4.2 的"索引与唯一"列描述**列组合**，具体名字如下（platform 侧）：
+
+| 表 | 具体索引名 |
+|---|---|
+| `param` | `uk_param_config_key_org`（`config_key, org_id`，partial）、`idx_param_config_group` |
+| `dict_type` | `uk_dict_type_type_code`（partial） |
+| `dict_item` | `uk_dict_item_type_value`（`type_code, dict_value`，partial） |
+| `file` | `idx_file_sha256`、`idx_file_biz`（`biz_type, biz_id`）、`idx_file_uploader`、`idx_file_status_created_at` |
+| `job` | `uk_job_job_code`（partial）、`idx_job_status_next_fire_time` |
+| `job_run` | `idx_job_run_code_fire`（`job_code, fire_time DESC`）、`idx_job_run_status_fire`（`status, fire_time DESC`） |
+| `excel_task` | `uk_excel_task_task_id`（partial）、`idx_excel_task_operator_created_at`、`idx_excel_task_status` |
+| `notify_template` | `uk_notify_template_code`（partial）、`idx_notify_template_channel` |
+| `notice` | `idx_notice_receiver_read_created_at`（`receiver_id, read_flag, created_at DESC`） |
+
+iam 侧同规则（示例）：`uk_sys_user_username`、`idx_sys_user_primary_org`、`uk_org_node_org_code`、`idx_org_node_parent`、`uk_role_role_code`、`uk_permission_perm_code`、`uk_user_role_triple`（`user_id, role_id, org_id`）；完整清单在 iam 分册，本册只保证命名规则一致。
+
+**日志/关系表例外声明**：`job_run`（任务日志）与 `user_password_history` **不参与逻辑删除**（不带 `deleted`，按时间定期清理）；这是 5.1 第 3 条的显式例外。
 ### 5.5 初始化数据与首个管理员
 
 - **种子数据用可重复迁移**（`R__seed_platform.sql` / `R__seed_iam.sql`），全部 `INSERT ... ON CONFLICT DO NOTHING`（幂等，后续新增权限点会自动补）。**这是 5.1 第 13 条允许的 PG 私有语法唯一例外。**
@@ -789,7 +876,7 @@ P0 册 6.3 与 3.7 注 5 留下一批"P0 无可断言对象、留到 P1 首个�
 
 **复用 P0 前端**：`src/api/request.js`（全 POST 硬校验、`ApiError`）、`src/api/codes.js`、`src/api/idempotency.js`、`src/auth/session.js`、`LoginView`/`AppLayout`/`HomeView`。
 
-**M1–M5 交付**：登录页接真实 `AuthnApi`（含验证码、TOTP 分支；`21101/21102/21106` 分别给出可理解的提示）、组织树管理、用户管理（列表/新增/停用/重置密码/分配角色）、角色与权限（权限树 + 数据范围）、参数/字典/定时任务/文件的列表与最小 CRUD 页、站内消息列表。
+**M1–M5 交付**：登录页接真实 `AuthnApi`（含验证码、TOTP 分支；`21001/21102/21072` 分别给出可理解的提示）、组织树管理、用户管理（列表/新增/停用/重置密码/分配角色）、角色与权限（权限树 + 数据范围）、参数/字典/定时任务/文件的列表与最小 CRUD 页、站内消息列表。
 
 **规则**：所有写操作走 `src/api/` 封装并带 `X-Idempotency-Key`（`newIdempotencyKey()`）；路由与菜单由 `permission` 树（`perm_type=MENU`）驱动，前端守卫用权限码；**站内消息一律文本渲染，禁止 `v-html`**（3.9）。
 
