@@ -16,5 +16,10 @@
 
   <!-- 纯净性约束（P0 册 3.7）：本模块不得依赖任何 com.eaio.&lt;module&gt;、不得引用 Web 与持久层类型 -->
   <dependencies>
+    <!-- JSON 门面的底层实现（JsonUtils）；版本由 Boot BOM 管理，业务模块不直接依赖 Jackson -->
+    <dependency>
+      <groupId>tools.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
   </dependencies>
 </project>

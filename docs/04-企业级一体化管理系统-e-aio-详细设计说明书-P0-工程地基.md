@@ -799,6 +799,13 @@ public class RateLimiter {
 | `ExcelKit` | 10 万行导出内存、导入错误定位、模板导出 | 集成测试覆盖（P1 随 platform 使用） |
 | `RedisKit` / `DistributedLock` / `RateLimiter` | 互斥重建、锁竞争、TTL、限流 | **P1**（Redis 实现随后端引入；届时以 Testcontainers Redis 覆盖） |
 
+> **实现注记（2026-09-19，T5 落地）**：
+> 1. **门面落位**：`JsonUtils`、`SensitiveUtils`/`@Sensitive`/`SensitiveType`/`SensitiveSerializer`、`StringUtils`、`ConvertUtils`、`DateUtils`、`IdGenerator` 已在 `e-aio-common` 落地；`TreeUtils`/`CollectionUtils`/`BeanUtils` 与其门面清单同步仍待补（P0 内补齐，无外部依赖）。
+> 2. **`JsonUtils` 不提供 `TypeReference` 重载**：那会把 `tools.jackson.core.type.TypeReference` 写进调用方代码，门面即漏；多态改为 `toList(json, Foo.class)`、`toMap(json)`、`convert(value, Foo.class)`，签名只出现 JDK 类型（有反向断言测试守住）。
+> 3. **`@Sensitive` 必须与注解同用**：`SensitiveSerializer` 通过 `createContextual` 读取字段上的 `@Sensitive` 取规则；**全局注册 "String → 脱敏序列化器" 未做**——那会让普通字符串的序列化路径全部经过脱敏分支，风险高于收益，展示层按字段显式声明更稳。
+> 4. **Hutool 底座 P0 未引入**（`cn.hutool:hutool-all` 已核实坐标与许可 Mulan PSL v2，可用；本机无法下载验证，且基础工具用 JDK 标准库即可）。是否引入作为"底座"待决策；门面已按"可换实现"设计，业务模块只用 `com.eaio.common.*`。
+> 5. **`IdGenerator` 时钟回拨分支无自动化测试**：回拨是"时间倒退"这一环境条件，单元测试无法制造。口径为**直接抛异常**（生产宁可启动/写入失败，也不产生重复 ID）；分支本身待补可注入时钟的重构后覆盖（P1）。
+
 ---
 
 ## 5. P0 测试与验收
