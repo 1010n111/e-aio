@@ -38,6 +38,14 @@ public class GlobalExceptionHandler {
         return fail(e.getCode(), e.getMessage());
     }
 
+    /** 演示接口的业务失败（P1 有真实业务模块后由模块异常替换，见 DemoController 说明）。 */
+    @ExceptionHandler(DemoController.DemoBusinessException.class)
+    public Result<Void> handleDemoBusiness(DemoController.DemoBusinessException e, HttpServletRequest request) {
+        ErrorCode errorCode = DemoController.demoErrorCode();
+        log.warn("业务失败：code={} uri={} message={}", errorCode.getCode(), request.getRequestURI(), e.getMessage());
+        return fail(errorCode.getCode(), e.getMessage());
+    }
+
     /** 系统异常：消息可能含内部细节，对外只给固定文案，堆栈进日志。 */
     @ExceptionHandler(SystemException.class)
     public Result<Void> handleSystem(SystemException e, HttpServletRequest request) {

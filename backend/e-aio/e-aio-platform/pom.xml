@@ -15,9 +15,14 @@
   <description>平台支撑模块：P0 仅承载平台自有迁移脚本（classpath:db/migration/platform），无业务代码</description>
 
   <!--
-    P0 无业务代码、无依赖。迁移基线 V1__baseline.sql 随 T3 落位：
+    P0 无业务代码、无运行时依赖。迁移基线 V1__baseline.sql 随 T3 落位：
     脚本只允许 Schema 与注释，不含业务表；P1 平台迁移自 V2__ 起连续编号。
   -->
   <dependencies>
+    <!-- 只为根包声明 @ApplicationModule（模块侧登记）：modulith-api 不引 Spring 容器与启动器 -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-api</artifactId>
+    </dependency>
   </dependencies>
 </project>

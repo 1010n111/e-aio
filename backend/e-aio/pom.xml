@@ -22,6 +22,9 @@
     <java.version>21</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <!-- 框架补丁浮动：下列两项与 Boot 配套，只写小版本（P0 册 3.1.2 版本策略） -->
+    <spring-modulith.version>2.1.1</spring-modulith.version>
+    <archunit.version>1.5.0</archunit.version>
   </properties>
 
   <!--
@@ -46,6 +49,24 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Boot BOM 不含 Modulith 与 ArchUnit：这两项自行锁定（P0 册 3.1.2 已核实版本） -->
+      <dependency>
+        <groupId>org.springframework.modulith</groupId>
+        <artifactId>spring-modulith-bom</artifactId>
+        <version>${spring-modulith.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
     <pluginManagement>
