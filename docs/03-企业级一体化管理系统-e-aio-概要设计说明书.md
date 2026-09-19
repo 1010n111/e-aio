@@ -2,7 +2,7 @@
 title: 企业级一体化管理系统概要设计说明书
 type: 概要设计说明书（HLD）
 phase: 概要设计
-version: V1.1（审核修订）
+version: V1.2（审核修订）
 status: 已定稿
 date: 2026-09-16
 tags:
@@ -135,7 +135,7 @@ e-aio 定位为**全开源、自托管、模块化单体**的企业级一体化�
 - **技术底座 common**：`com.eaio.common` 为最底层技术底座包，被所有模块共享；common 不依赖任何模块。
 - **Spring Modulith 验证**：`ApplicationModules.verify()` 在测试阶段自动校验模块依赖、禁止循环依赖、禁止访问他人 `internal`。
 - **单一可执行产物**：整个系统构建为一个 Spring Boot 可执行 Jar，通过配置按需启用模块。
-- **独立 Schema**：每个模块一个数据库 Schema（`eaio_oa`、`eaio_crm`、`eaio_fin`、…），跨模块数据访问一律经模块公共 API，禁止跨 Schema SQL。
+- **独立 Schema**：每个模块一个数据库 Schema（`eaio_oa`、`eaio_crm`、`eaio_finance`、…），跨模块数据访问一律经模块公共 API，禁止跨 Schema SQL。
 
 #### 2.2.3 物理部署架构
 
@@ -415,7 +415,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 |--------|------|
 | `eaio_iam` | iam |
 | `eaio_audit` | audit |
-| `eaio_wf` | workflow、approval |
+| `eaio_workflow` | workflow |
+| `eaio_approval` | approval（依赖 workflow，见下注） |
 | `eaio_mdm` | mdm |
 | `eaio_platform` | platform |
 | `eaio_report` | report |
@@ -423,7 +424,7 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | `eaio_oa` | oa |
 | `eaio_crm` | crm |
 | `eaio_inventory` | inventory |
-| `eaio_fin` | finance |
+| `eaio_finance` | finance |
 | `eaio_hr` | hr |
 | `eaio_project` | project |
 | `eaio_scm` | scm |
@@ -437,7 +438,8 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 - **common 无 Schema**：common 为纯代码工具库，不建表、无数据存储，不占用独立 Schema。
 - **mobile 无独立 Schema**：mobile 为网关侧统一入口，复用各业务模块 API 与数据，不建独立业务表。
 - 公共维度：组织/用户/角色等由 `eaio_iam` 统一承载，业务表通过**组织 ID、用户 ID 外键引用**（逻辑引用，不跨 Schema 建物理外键，避免耦合）。
-- 命名规范：表名 `snake_case` 复数；主键统一 `id BIGINT`（雪花算法）；审计字段 `created_at/created_by/updated_at/updated_by/version` 统一附带。
+- **Schema 命名**：`eaio_<模块名全称>`，与"一个模块 = 一个 Maven 模块 + 一个根包 `com.eaio.<module>` + 一个 Schema"一一对应；**Schema 名不得缩写、不得多模块共用**。模块 ↔ 根包 ↔ Schema ↔ 错误码段的登记表以 04-DD（P0 册附录 6.1 + P1 批次总册 6.1）为单一事实来源。**例外的依赖不等于合并**：`approval` 依赖 `workflow`（消费 `ProcessApi`/`TaskApi`），但两者仍是两个模块、两个 Schema、两条独立迁移序列。
+- 命名规范：表名 `snake_case` **单数**、模块内不加前缀（`sys_` 亦不保留，iam 的 `sys_user` 因 PG 保留字为唯一例外）；主键统一 `id BIGINT`（雪花算法）；统一列 `created_at/created_by/updated_at/updated_by/version/deleted`（`deleted` 为 `BOOLEAN`）；时间列 `TIMESTAMPTZ`；索引 `idx_<table>_<cols>`。**细则以 04-DD P1 批次总册 3.5 为准**（本行为概要级约定，冲突时以 DD 为准）。
 
 ### 4.3 数据存储分工
 
@@ -968,4 +970,13 @@ SoD 规则(sod_rule): 互斥权限组，分配时校验
 | 阶段 2（M9–M24）业务闭环 | P2 完成（顺序 10–20） | CRM/库存/财务（含财务审计）/HRM/SCM/报表，商机→合同→履约→回款闭环 |
 | 阶段 3（M24–M36）平台化 | P3 完成（顺序 21–24） | 开放平台/移动端/多语言多币种，行业解决方案与社区生态 |
 
-*本概要设计说明书为 V1.1（审核修订版），基于可行性研究报告与 SRS 编制；详细设计阶段将逐模块细化并保持与本文档的一致性与可追溯性。*
+*本概要设计说明书为 V1.2（审核修订版），基于可行性研究报告与 SRS 编制；详细设计阶段将逐模块细化并保持与本文档的一致性与可追溯性。*
+---
+
+## 修订记录
+
+| 版本 | 日期 | 主要修订 |
+|---|---|---|
+| V1.0 | 2026-09-15 | 初版（GB/T 8567 概要设计说明书结构）。 |
+| V1.1 | 2026-09-16 | 审核修订版（模块边界 / 依赖矩阵 / 开发队列 13.2 与验收 13.3 定稿）。 |
+| V1.2 | 2026-09-21 | **4.2 Schema 划分修订**：① 拆分 `eaio_wf`（workflow、approval 共用）为 `eaio_workflow` 与 `eaio_approval` 两行——一模块一 Schema；approval 仍依赖 workflow，但依赖走 `api` 包，与 Schema 归属无关；② 缩写 Schema 名改为模块全称（`eaio_fin` → `eaio_finance`）；③ 新增「Schema 命名不得缩写、不得多模块共用」与登记表单一事实来源说明；④ 4.2 命名规范由「表名复数」改单数、统一列改 `created_at/…/deleted(BOOLEAN)`，细则指向 04-DD P1 批次总册 3.5。来源：P1 详细设计批次一致性核对（04-DD P1-1-批次总册 6.1 注 4）。 |

@@ -419,7 +419,7 @@ HLD 13.3 的 P1 验收为四项：**母子公司权限 E2E**、**操作审计 WO
 1. 新增模块 = 建 Maven 模块 + 父 POM 登记 + `package-info` 声明模块 + 登记本表 + `eaio.flyway.modules` 追加（**四处同时改**，缺一处 CI 失败，A1 断言兜底）。
 2. 错误码段每模块 1000 号，段内分组留空号；**空号不回收**（P0 册 3.2.3）。
 3. 本表是 P1 范围内的唯一来源；P0 册 6.1 的行仍有效，两者合并为完整登记表。
-4. **上游待修正一致性问题（登记，不修改上游）**：HLD 4.2 物理结构表把 workflow 与 approval 合并为一行 `eaio_wf | workflow、approval`，与"一个模块 = 一个根包 = 一个 Schema"的模块定义（`CONTEXT.md`）及本表冲突。本批次裁决：**以每模块独立 Schema 为准**（`eaio_workflow` / `eaio_approval`），HLD 4.2 相应行待 HLD 下次修订时同步（走 Issue 评审，不在本批次直接改 HLD）。
+4. **上游一致性已同步（2026-09-21）**：HLD 4.2 原把 workflow 与 approval 合并为一行 `eaio_wf`，与"一个模块 = 一个根包 = 一个 Schema"（`CONTEXT.md`）及本表冲突。**已直接修订 HLD 至 V1.2**：拆为 `eaio_workflow` / `eaio_approval` 两行，并把缩写 Schema 名改为模块全称（`eaio_fin` → `eaio_finance`）、补「Schema 名不得缩写、不得多模块共用」与登记表单一事实来源说明（HLD 修订记录 V1.2 留痕）。
    **为什么不能合并**：① 依赖方向是 **approval → workflow**（审批中心聚合工作流引擎的任务与实例，见 3.1 依赖表），两模块共用一个 Schema 会让"负责任何一张表迁移"的边界消失；② 一个 Schema = 一个 Flyway 实例 = 一条版本序列（ADR-0002），两模块的 DDL 混排会把版本号变成运行时约定；③ 裁剪场景（NFR-EXT-01）里"只留引擎不留审批中心"将无法拆分。
    **注意**：合并 Schema 与"approval 依赖 workflow"并不构成矛盾（依赖走 `api`，与数据库归属无关，同 audit → iam、iam → platform 的先例）；被否决的是"共用 Schema"，不是"存在依赖"。
 
@@ -481,7 +481,7 @@ HLD 13.3 的 P1 验收为四项：**母子公司权限 E2E**、**操作审计 WO
 | workflow + approval 设计与实现 | 顺序 6 分册（M5–M8） |
 | mdm / oa / portal | 顺序 7–9 分册 |
 | audit M6 收口（归档自动化、告警通知、财务审计联调） | audit 后续册或 P1 补册 |
-| HLD 4.2 与登记表的 Schema 命名不一致 | 提 Issue 走 HLD 修订评审 |
+| ~~HLD 4.2 与登记表的 Schema 命名不一致~~ | **已关闭（2026-09-21）**：HLD 直接修订到 V1.2（拆 `eaio_workflow`/`eaio_approval`、缩写改全称、命名规范对齐 DD） |
 | 信创数据库方言适配 | HLD 12 待细化；P2/P3 评估 |
 | 多语言（i18n）与全中文硬编码策略 | P3 i18n 分册 |
 
