@@ -843,14 +843,14 @@ public class RateLimiter {
 
 ### 5.2 P0 验收清单（对照 HLD 13.3）
 
-| HLD 13.3 P0 验收 | 落地验证 |
-|------------------|----------|
-| 工程骨架 CI 绿灯 | GitHub Actions 全阶段通过 |
-| ArchUnit 验证通过 | `ApplicationModules.verify()` + 自定义规则 0 违例 |
-| Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功：`eaio_platform` 骨架 Schema 自动创建、`flyway_schema_history` 落位、`V1__baseline.sql` 版本 = 1（P0 无业务表；其余模块 Schema 由 P1 各自脚本创建） |
-| common 全部工具单测通过 | 第 4.8 节测试清单全绿，可执行核心 100%（4.8 口径） |
-| 前端壳可运行 | `npm run build` + `npm run lint` 通过；路由壳可渲染；`request.js` 单测通过（POST 拼接 / 幂等键入头 / 按 `code` 判定 10401 跳登录 / `code!==0` reject）——**P0 不做真实业务页面**（第六轮裁决） |
-| 启动文档可用 | README 快速启动段可在**有 Docker**（compose 起 PG/Redis）与**无 Docker**（`mvn -B verify -DskipITs` + `eaio.flyway.enabled=false`）两种环境下走通；命令区与 `AGENTS.md` 一致 |
+| HLD 13.3 P0 验收 | 落地验证 | 状态（2026-09-19） |
+|------------------|----------|--------------------|
+| 工程骨架 CI 绿灯 | GitHub Actions 全阶段通过 | ⏳ **待 CI 首跑**：流水线已交付（`.github/workflows/ci.yml`，作业映射阶段 1–6），但仓库尚未推送到远端，CI 从未真实执行——首跑通过前不算达成，因此**暂不打 `v0.1.0-p0`**（见 5.3） |
+| ArchUnit 验证通过 | `ApplicationModules.verify()` + 自定义规则 0 违例 | ✅ **有证据**：`ArchitectureTest` 10/10 全绿（本机 `mvn -B test`，真实基线 Boot 4.1.1）；规则有效性由真实违规证明过（规则落地当天报出 16 处 `depends on non-exposed type`，随后按共享面收敛） |
+| Flyway 迁移可运行 | Testcontainers PostgreSQL 空库迁移成功：`eaio_platform` 骨架 Schema 自动创建、`flyway_schema_history` 落位、`V1__baseline.sql` 版本 = 1（P0 无业务表；其余模块 Schema 由 P1 各自脚本创建） | ⚠️ **部分证据**：集成用例 `PlatformMigrationIT` 已就位（迁移落库 + 历史表 + 版本=1 + 无业务表 4 条断言）；本机无 Docker，实测 `Tests run: 4, Skipped: 4`，**权威验证在 CI 阶段 5**。脚本内容另有单测兜底（`PlatformBaselineScriptTest` 6 条） |
+| common 全部工具单测通过 | 第 4.8 节测试清单全绿，可执行核心 100%（4.8 口径） | ✅ **有证据**：`e-aio-common` 63 个用例全绿（`Result`/`PageResult`/`ErrorCode`/异常/`JsonUtils`/`SensitiveUtils`/`SensitiveType`/`SensitiveSerializer`/`DateUtils`/`StringUtils`/`ConvertUtils`/`IdGenerator`）。**例外**：`IdGenerator` 时钟回拨分支无可自动化测试（需可注入时钟，4.8 已登记） |
+| 前端壳可运行 | `npm run build` + `npm run lint` 通过；路由壳可渲染；`request.js` 单测通过（POST 拼接 / 幂等键入头 / 按 `code` 判定 10401 跳登录 / `code!==0` reject）——**P0 不做真实业务页面**（第六轮裁决） | ✅ **有证据**：`npm test` 13/13、`npm run lint` 0 problem、`npm run build` 成功（产物 1.05 MB，Element Plus 全量引入，按需引入留 P1） |
+| 启动文档可用 | README 快速启动段可在**有 Docker**（compose 起 PG/Redis）与**无 Docker**（`mvn -B verify -DskipITs` + `eaio.flyway.enabled=false`）两种环境下走通；命令区与 `AGENTS.md` 一致 | ⚠️ **一半有证据**（按文档实际执行过）：**无 Docker 路径走通**——`mvn -B verify -DskipITs` = BUILD SUCCESS；`java -jar target/e-aio-app-*.jar --eaio.flyway.enabled=false` 启动成功且 `/api/actuator/health` 返回 `data.status = UP`。**有 Docker 路径未验证**（本机无 Docker：compose 起服务与 `docker compose ps` healthy 未实测） |
 
 ### 5.3 里程碑交付（对齐可研 7.1 阶段 0）
 
@@ -863,7 +863,13 @@ public class RateLimiter {
 | AI PoC | AI 网关连通性验证（spring-ai 集成，P1 正式化） |
 | 立项评审材料 | 01–04 文档 + P0 演示 |
 
-**Git 基线（第七轮裁决）**：P0 全部验收（5.2）通过后打 tag **`v0.1.0-p0`**，作为"可复现地基"（可研 7.1 阶段 0）；`NOTICE` 内同步记录 RuoYi 蓝本 tag/commit。后续批次各自打 `v0.<批次>.<序号>`。
+**Git 基线（第七轮裁决）**：P0 全部验收（5.2）通过后打 tag **`v0.1.0-p0`**，作为"可复现地基"（可研 7.1 阶段 0）；`NOTICE` 内同步记录 RuoYi 蓝本 tag/commit（已按要求写入：RuoYi-Vue `v3.9.2` / `0e2d75c2`，RuoYi-Vue3 `v3.9.2` / `9baaff77`）。后续批次各自打 `v0.<批次>.<序号>`。
+
+> **tag 前置条件（2026-09-19，未满足）**：按 5.2，`v0.1.0-p0` 需"CI 全阶段通过"这一条有证据，而本仓库尚未推送到 GitHub 远端、CI 从未真实执行；另有两条验收（Flyway 迁移真跑、有 Docker 启动路径）因本机无 Docker 只能由 CI 阶段 5 验证。
+> **因此现在不打 tag**。达成顺序建议：
+> 1. 推送仓库到 GitHub（`main` 分支）；
+> 2. 确认 CI 四个作业全绿（首次运行最可能失败的是 `npm ci` 与 Testcontainers 镜像拉取）；
+> 3. CI 绿灯后打 tag：`git tag -a v0.1.0-p0 -m "P0 工程地基基线：可运行骨架 + 契约 V1 + 迁移骨架 + 工具门面 + 入站链路 + 前端壳 + 质量门"` 并 `git push origin v0.1.0-p0`。
 
 ---
 

@@ -1,0 +1,56 @@
+e-aio
+Copyright 2026 e-aio contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+第三方组件
+--------------------------------------------------------------------------------
+
+本产品的依赖组件及其许可证清单由构建自动生成，请以该清单为准：
+
+    cd backend/e-aio && mvn -B verify -DskipITs
+    # 产物：*/target/generated-sources/license/THIRD-PARTY.txt
+
+依赖许可证白名单与门禁配置见 backend/e-aio/pom.xml（license-maven-plugin）。
+
+--------------------------------------------------------------------------------
+蓝本溯源（MIT，仅参考重写，不含其源代码）
+--------------------------------------------------------------------------------
+
+本产品在**工程结构与功能设计**上参考了以下上游项目。按既定处置方式（clean-room 参考重写），
+本仓库**不拷贝、不改写、不打包**这些项目的任何源代码文件；此处记录许可证与版本，仅作出处说明。
+
+1. RuoYi-Vue（后端蓝本）
+   - 项目：https://github.com/yangzongzhuan/RuoYi-Vue
+   - 许可证：MIT License
+   - 参考版本：tag v3.9.2（commit 0e2d75c23c0d7a1fa85f660f06a59a4dd1ba14c0）
+
+2. RuoYi-Vue3（前端蓝本）
+   - 项目：https://github.com/yangzongzhuan/RuoYi-Vue3
+   - 许可证：MIT License
+   - 参考版本：tag v3.9.2（commit 9baaff77adfda0431ec920b80a3624f391f1eaaf）
+
+上游 MIT 许可证文本（适用于上述两个项目）：
+
+    MIT License
+
+    Copyright (c) 2018-2026 RuoYi
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.

@@ -59,7 +59,7 @@
 | -------------- | ---------------------------------------------------------------------- |
 | **语言 / 框架**    | Java 21（或更新 LTS）+ **Spring Boot 4.1.x + Spring Modulith 2.1.x**（开源）    |
 | **工具库**       | Lombok / Hutool / Bean Validation / MapStruct（开源）|
-| **前端**         | Vue 3 + Vite + Element Plus（RuoYi-Vue3 蓝本，开源）+ 配置化渲染引擎                                             |
+| **前端**         | Vue 3 + Vite + Element Plus（自行初始化）+ 配置化渲染引擎                                            |
 | **数据库**        | PostgreSQL（开源，主库，事务强一致）                                                |
 | **缓存**         | Redis（开源，分布式）+ Caffeine（开源，本地二级缓存）                                     |
 | **定时任务**       | Quartz / XXL-JOB（开源）或 Spring Task + ShedLock                           |
@@ -87,7 +87,7 @@
 
 本项目**不采用微服务架构**，采用 **Spring Modulith 模块化单体**：
 
-* **基于 RuoYi 蓝本**：以 RuoYi-Vue 前后端分离版（MIT）为代码蓝本，后端用 Spring Boot 4.x + Spring Modulith 2.x 重构为模块化单体，前端基于 RuoYi-Vue3（Vue3 + Vite + Element Plus），叠加母子公司权限 / 双审计 / 主数据 / AI
+* **参考成熟蓝本**：工程结构与功能设计参考 RuoYi-Vue / RuoYi-Vue3（MIT，见 [NOTICE](NOTICE)），后端以 Spring Boot 4.x + Spring Modulith 2.x **参考重写**为模块化单体，前端自行初始化（Vue3 + Vite + Element Plus），叠加母子公司权限 / 双审计 / 主数据 / AI 等能力；**不拷贝上游源代码**
 * **模块边界**：按业务域划分模块（`platform`、`iam`、`audit`、`workflow+approval`、`mdm`、`report`、`ai`、`oa`、`crm`、`inventory`、`finance`、`hr`、`project`、`scm`、`marketing`、`service`、`fund`、`portal`、`integration`、`mobile`、`i18n`），模块间通过明确公共 API 交互
 * **业务模块调用通用能力**：业务模块（按企业定制）单向调用通用能力（流程 / 权限 / 审计 / 报表 / AI 等），依赖方向为"业务模块 → 通用能力"，禁止反向依赖
 
@@ -128,7 +128,7 @@ e-aio/
 │       ├── e-aio-app/           # 启动模块（可执行 Jar）
 │       ├── e-aio-common/        # common 技术底座（Excel/Redis/通用工具门面）
 │       └── …                    # P1–P3 按队列新增 e-aio-<module>
-├── frontend/                    # 前端独立工程（RuoYi-Vue3 蓝本，Vue3 + Vite + Element Plus）
+├── frontend/                    # 前端独立工程（自行初始化，Vue3 + Vite + Element Plus）
 
 ├── docs/                        # 项目文档
 
