@@ -22,3 +22,7 @@ tmp/
 *.iml
 .vscode/
 .DS_Store
+
+# 本机离线验证的临时物（settings/解包产物，不入库）
+.mvn-local/
+.tmpjavap/

@@ -40,6 +40,17 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-aspectj</artifactId>
     </dependency>
+
+    <!-- 数据访问与迁移（每模块独立 Flyway 实例，装配见 com.eaio.app.config.ModuleFlywayConfig） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
   </dependencies>
 
   <build>

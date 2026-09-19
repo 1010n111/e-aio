@@ -474,11 +474,11 @@ eaio:
 
 | 约定 | 说明 |
 |------|------|
-| 实例划分 | 每模块一个 `Flyway` Bean：`locations=classpath:db/migration/<module>`、`schemas=eaio_<module>`、在该 Schema 内建 `flyway_schema_history`；版本号在模块内独立递增 |
-| 关闭默认自动配置 | `spring.flyway.enabled=false`（3.5.2）；由 `ModuleFlywayConfig`（`com.eaio.app.config`）按 `eaio.flyway.modules` 登记表逐模块执行 `migrate()`，避免所有模块脚本被灌进默认 Schema |
+| 实例划分 | 每模块一个 `Flyway` 实例：`locations=classpath:db/migration/<module>`、`defaultSchema=eaio_<module>`、在该 Schema 内建 `flyway_schema_history`、`failOnMissingLocations=true`（登记与实际脚本不一致时**启动即失败**，而不是静默空跑）；版本号在模块内独立递增。实现注记（2026-09-19）：flyway-core 12.x 的 `FluentConfiguration` **没有 `schemas(...)`**，多 Schema 由 `defaultSchema` + `createSchemas` 覆盖；脚本内对象仍一律显式 schema 限定 |
+| 关闭默认自动配置 | 启动类排除 `FlywayAutoConfiguration`（比只设 `spring.flyway.enabled=false` 更硬：默认实例根本不会被创建，避免"迁移跑两遍"）；迁移由 `ModuleFlywayConfig`（`com.eaio.app.config`）按 `eaio.flyway.modules` 登记表逐模块装配，**复用 Boot 的 `FlywayMigrationInitializer`** 作为触发器（一个模块一个触发器、按登记顺序执行），不自写 `InitializingBean` |
 | 脚本位置 | 各模块自带 `src/main/resources/db/migration/<module>/`（[database.md](agents/database.md)）；**P0 即落 platform 模块自有位置**（`e-aio-platform/src/main/resources/db/migration/platform/V1__baseline.sql`），`e-aio-app` **不放迁移脚本**——数据层归模块，P1 抽取模块时零搬移；P0 无 platform 模块期间，由 `e-aio-app` 以 Maven 依赖聚合承载该资源（脚本仍在模块自己的路径下） |
 | 命名规范 | `V<版本>__<描述>.sql`（模块内递增）；可重复迁移 `R__<描述>.sql`（checksum 变化时重跑，仅用于视图/函数/种子） |
-| Schema 管理 | Flyway `create-schemas=true` 依据 `schemas` 自动创建 `eaio_<module>`；脚本内对象一律显式 schema 限定，**禁止跨 Schema DDL/查询**（[database.md](agents/database.md)） |
+| Schema 管理 | Flyway `createSchemas=true` 依据 `defaultSchema` 自动创建 `eaio_<module>`（脚本内再 `CREATE SCHEMA IF NOT EXISTS` 属幂等冗余，保留作为"直接拿脚本手工建库"时的兜底）；脚本内对象一律显式 schema 限定，**禁止跨 Schema DDL/查询**（[database.md](agents/database.md)） |
 | 数据库权限 | **本地/CI**：Testcontainers 以超管运行，验证"应用可建 Schema"这条路径本身可用（`create-schemas=true` 生效）；**生产**：由 DBA 预建 `eaio_<module>` 并授权应用角色，部署清单含该步骤（[database.md](agents/database.md)）。P0 不引入独立迁移账号、不写初始化存储过程 |
 | P0 内容 | 仅登记 `platform → eaio_platform`；脚本位于 **platform 模块自有位置** `e-aio-platform/src/main/resources/db/migration/platform/V1__baseline.sql`（基线占位，**不含任何业务表 DDL**）、`e-aio-app` 不放脚本（见上行）。其余模块 Schema 由 P1 起各自迁移脚本创建；platform 后续脚本自 `V2__` 连续编号。**错误码**：`20000–20999` P0 只作登记预留（附录 6.1），**不建空枚举**，P1 随首个 platform 接口一起落地（第七轮裁决） |
 | 种子数据 | P0 不注入业务种子（无表可写）；系统参数/字典/角色/流程模板等种子随 platform、iam 在 P1 各自迁移脚本注入 |

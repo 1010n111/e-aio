@@ -1,0 +1,11 @@
+-- 模块：platform（平台支撑）
+-- 归属：Flyway 实例 eaio_platform，脚本目录 classpath:db/migration/platform
+--
+-- V1 基线只做一件事：建立平台模块自己的 Schema。
+-- 历史表 flyway_schema_history 由 Flyway 建在本 Schema 内（defaultSchema + createSchemas）。
+--
+-- 约束（P0 册 3.6）：
+--   1. 本文件不得包含业务表：P0 不做业务建模，任何表结构在 P1 起自 V2__ 连续编号追加；
+--   2. 其他模块的 Schema 由各自模块的迁移建立，本文件不得越界创建；
+--   3. 已发布的迁移文件不可修改，只能新增（校验和会拦下改动）。
+CREATE SCHEMA IF NOT EXISTS eaio_platform;
