@@ -166,8 +166,8 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 
 | 配置项 | 值 |
 |--------|-----|
-| `spring-boot.version` | 4.1.1（锁定；4.1.x 线最新稳定版，2026-09-19 核实） |
-| `spring-modulith.version` | 2.1.1（2.1.x 线 ↔ Boot 4.1.x） |
+| `spring-boot.version` | `4.1.x`（补丁浮动；当前解析值 **4.1.1**，升级走 PR） |
+| `spring-modulith.version` | `2.1.x`（当前解析值 **2.1.1**，↔ Boot 4.1.x） |
 | `java.version` | 21（LTS） |
 | `project.build.sourceEncoding` | UTF-8 |
 | 打包 | Spring Boot Maven Plugin（`e-aio-app` 为 repackage 主模块） |
@@ -200,6 +200,8 @@ e-aio/                                # 主仓库（backend + frontend + docs）
 > **版本策略**：统一由父 POM 管理，锁定已知兼容组合；升级经 PR 评审并跑全量 CI。表内未标注范围者均为 compile 范围，`archunit-junit5` 与测试件为 test 范围；`spring-modulith-starter-test` 仅 test 范围。**MyBatis-Plus P0 不引入**（P0 无表可映射，避免无用的自动配置与启动风险），P1 顺序 3 再落地 Boot 4 对应坐标 `com.baomidou:mybatis-plus-spring-boot4-starter`（≥3.5.16，届时锁定版本）；Redisson（分布式锁/限流/队列）与 springdoc（OpenAPI 标注）**P0 同样不引入**：`RedisKit` P0 只冻结接口签名（4.4）、平台无自定义接口无需文档，二者均随 P1 首次使用引入，引入时同步 [`docs/agents/tech-stack.md`](agents/tech-stack.md)。Spring Security 与 JWT 同理，由 P1 iam 承接（3.1.2 未列 = P0 无认证实现，`10401`/`10403` 仅为契约）。
 >
 > **版本锁定（✅ 已核实 2026-09-19，Maven Central metadata / POM 与官方文档）**：Java 21 · Spring Boot **4.1.1** · Spring Modulith **2.1.1**（2.1.x ↔ Boot 4.1.x）· archunit **1.5.0** · `cn.hutool:hutool-all` **5.8.47**（Mulan PSL v2）· `org.apache.fesod:fesod-sheet` **2.0.2-incubating**（仍处孵化：旧 EasyExcel 代码 IP 清理未完成）· mybatis-plus-spring-boot4-starter **3.5.17**（P1）· redisson-spring-boot-starter **4.7.0**（P1，内置 `redisson-spring-data-41` 对应 Boot 4.1；自动配置类为 `RedissonAutoConfigurationV4`，**旧版本按 `V2` 排除的写法在 Boot 4 静默失效**）· springdoc **3.1.1**（P1）· logstash-logback-encoder **9.0** · testcontainers **2.0.5** · native-maven-plugin **1.1.14（UPL-1.0，非 GPL-2.0+CE）**，Boot 4.1.1 官方文档标称 Native Build Tools **1.1.8**（1.1.14 与之兼容性未验证 → 原生构建 P1 验证）。
+>
+> **锁定粒度**：Spring Boot / Spring Modulith **补丁级浮动**（父 POM 写 `4.1.x` / `2.1.x`，由 BOM 解析；本文档记录当前值 4.1.1 / 2.1.1，随升级同步），其余第三方依赖**精确锁定**并在升级时走 PR 评审。许可证与版本核实清单见 3.1.2 表内 ✅ 标注，核对日期 2026-09-19。
 
 #### 3.1.3 命名空间与包结构规范
 
@@ -496,10 +498,10 @@ CI 中 `mvn verify` 自动执行；任何架构违例即构建失败（NFR-OSS-0
 | 2 Lint | 后端 `mvn -B checkstyle:check`（规则集随 P0 冻结）；前端 `npm run lint`（ESLint） | ✅ |
 | 3 单元测试 | `mvn -B test`（含 ArchUnit） | ✅ |
 | 4 架构测试 | `mvn -B verify -DskipITs`（Modulith verify） | ✅ |
-| 5 集成测试 | Testcontainers 起 PostgreSQL/Redis 跑 `@SpringBootTest` + Flyway 空库迁移 | ✅ |
-| 6 安全扫描 | 依赖漏洞（OWASP Dependency-Check：NVD API Key 由仓库 Secrets 提供 + Actions 缓存，否则常态误红）+ License 扫描（NFR-OSS-04） | ✅ |
-| 7 镜像构建 | Docker 多阶段构建，推送 GHCR | ⏸（PR 跳过，主分支执行） |
-| 8 发布 | 打 tag 时发布 Release | ⏸ |
+| 5 集成测试 | Testcontainers 起 PostgreSQL 17（`pgvector/pgvector:pg17`）/ Redis 7 跑 `@SpringBootTest` + Flyway 空库迁移；测试类标 `@Testcontainers(disabledWithoutDocker = true)`——本机无 Docker 时跳过，迁移路径的**权威验证在 CI** | ✅ |
+| 6 安全扫描 | License 扫描（NFR-OSS-04）；**OWASP Dependency-Check 属 P1**（P0 依赖面小、无认证代码，NVD Key 与缓存策略随 P1 一并落地） | ✅（License） |
+| 7 镜像构建 | Docker 多阶段构建，推送 GHCR —— **属 P1**（P0 不交付 `Dockerfile`） | —（P1） |
+| 8 发布 | 打 tag 时发布 Release —— **属 P1** | —（P1） |
 
 配套：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`LICENSE`（Apache-2.0）、`NOTICE`（含 RuoYi MIT 声明与蓝本 tag/commit）、PR 模板（NFR-OSS-03/05）；本地依赖编排 `docker-compose.yml` + `.env.example`。
 
@@ -614,7 +616,7 @@ com.eaio.common
 ├── api        # Result<T> / PageResult<T> / ErrorCode
 ├── exception  # BusinessException / SystemException
 ├── id         # IdGenerator（雪花）
-├── json       # JsonUtils（Jackson 封装）
+├── json       # JsonUtils（Jackson 3 封装，不暴露 ObjectMapper 类型）
 ├── util       # 工具门面：DateUtils / StringUtils / CollectionUtils / BeanUtils / TreeUtils / SensitiveUtils / ConvertUtils
 ├── excel      # ExcelKit（Apache Fesod 封装）
 ├── redis      # RedisKit（缓存 + 轻量队列）、DistributedLock、RateLimiter、RedisKeys
@@ -632,7 +634,7 @@ com.eaio.common
 | `DateUtils` | `now()` / `format(d, pattern)` / `parse(str, pattern)` / `addDays` / `between` | 时间处理（UTC 存储、本地展示约定） |
 | `StringUtils` | `isBlank` / `isNotBlank` / `truncate` / `mask` | 字符串工具 |
 | `CollectionUtils` | `isEmpty` / `toMap` / `groupBy` | 集合工具 |
-| `JsonUtils` | `toJson` / `fromJson` / `toMap` / `toList` | Jackson 封装，统一 ObjectMapper 配置（时区/空值策略） |
+| `JsonUtils` | `toJson` / `fromJson` / `toMap` / `toList`（多态签名） | **Jackson 3**（Boot 4 管理）封装；**不暴露 `ObjectMapper` 类型**（3.1.2 版本策略） |
 | `BeanUtils` | `copy` / `toMap`（MapStruct 用于性能敏感场景，反射拷贝仅限低频） | Bean 拷贝 |
 | `TreeUtils` | `buildTree(list, rootId)` / `flatten(tree)` | 组织树/菜单树通用 |
 | `SensitiveUtils` | `mask(mobile/email/idCard/bankNo)`；同包提供 `@Sensitive`（`SensitiveType` 枚举）与 Jackson `SensitiveSerializer` | 脱敏（JSON 序列化时自动应用） |
@@ -642,7 +644,7 @@ com.eaio.common
 关键实现要点：
 
 - **IdGenerator**：雪花算法（workerId 由配置注入，多实例分配）；时钟回拨保护（拒绝或等待）；返回 `long`，作为全部表主键。
-- **JsonUtils**：统一 `ObjectMapper`（`JavaTimeModule`、`WRITE_DATES_AS_TIMESTAMPS=false`、空值策略），业务模块禁止自建 ObjectMapper。
+- **JsonUtils**：基于 Boot 4 管理的 **Jackson 3**，统一时区（UTC）与空值策略；**对外只暴露 `toJson`/`fromJson`/`toMap`/`toList` 多态 API，签名中不出现 `ObjectMapper`/`JsonNode` 之外的 Jackson 类型**，业务模块禁止自建 ObjectMapper——Jackson 2→3 的 API 差异因此不会穿透到模块（4.2）。
 - **SensitiveUtils**：`@Sensitive(type=MOBILE/ID_CARD/BANK/EMAIL/CUSTOM)` 注解 + Jackson 序列化器；存储为原文，仅展示层脱敏（符合 NFR-SEC-03）。
 
 ### 4.3 ExcelKit（Apache Fesod）
@@ -848,4 +850,4 @@ public class RateLimiter {
 | 版本 | 日期 | 主要修订 |
 |------|------|----------|
 | V1.1 | 2026-09-19 | P0 阶段审核修订初版 |
-| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)。 |
+| V1.2 | 2026-09-19 | 评审修订（第一/二轮盘问裁决）：① 契约与幂等——`10501` 覆盖 `PROCESSING`/`DONE` 两态、长任务改任务 ID + 轮询（3.2.5）、P0 无认证实现的契约边界（3.3）；② 依赖基线——删除 5 项 P0 不引入依赖（security/jjwt/springdoc/redisson/native-maven-plugin），Boot 4 starter 改名（`-web`→`-webmvc`、`-aop`→`-aspectj`）、新增 `spring-boot-starter-flyway`，逐行核实坐标与许可证（Hutool 坐标/许可、ArchUnit 许可、native-maven-plugin 许可）、锁定版本（3.1.1/3.1.2）；③ 架构测试唯一落点 `e-aio-app`、common 仅自身约束、错误码每模块 1000 号分段并加单测（3.1.3/3.2.3/3.7）；④ Flyway 增加 `eaio.flyway.enabled` 总开关与基线约束（3.5.2/3.6）；⑤ 质量门——阶段 6 OWASP 推迟 P1、阶段 5 本机无 Docker 可跳过、阶段 7–8 标 P1（3.8/5.2）；⑥ 蓝本基线核实（RuoYi-Vue 3.9.2 = Boot 4.1.0 / Java 17，前端 MIT）并据此把 3.10 步骤 2/3/7/8/11/12 由"全量拷贝"改为"选择性迁移 + 重写"，P0 不落认证。新增根 [`CONTEXT.md`](../CONTEXT.md) 与 [`docs/adr/0001`](adr/0001-unified-post-and-always-200-result-contract.md)、[`0002`](adr/0002-per-module-schema-and-flyway-instance.md)；⑦ 第三轮：切面 starter 定 `-aspectj`、`JsonUtils` 锁 Jackson 3 多态门面（4.2）、本地镜像锁 PostgreSQL 17（`pgvector/pgvector:pg17`）+ Redis 7、版本锁定粒度定补丁浮动。 |

@@ -2,7 +2,7 @@
 
 ## 环境要求
 
-JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL 16+（每模块独立 Schema）、Redis 7+（缓存/锁/限流/幂等键）。
+JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL **17**（每模块独立 Schema，镜像 `pgvector/pgvector:pg17`）、Redis **7**（缓存/锁/限流/幂等键）。Docker 仅本地 `docker compose` 与 Testcontainers 集成测试需要；**无 Docker 时 `mvn -B verify -DskipITs` 仍可全绿**，集成测试由 CI 承担（`disabledWithoutDocker`，见 04-DD P0 册 3.8 阶段 5）。
 
 ## 后端命令（在 `backend/e-aio/` 下执行）
 
@@ -20,7 +20,7 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL 16+（�
 
 ## 本地依赖
 
-`docker compose up -d postgres redis`。仓库当前尚无 `docker-compose.yml`（P0 交付物），该命令在交付后生效。
+`docker compose up -d postgres redis`。仓库当前尚无 `docker-compose.yml`（P0 交付物），该命令在交付后生效。`postgres` 服务使用 `pgvector/pgvector:pg17`，初始化脚本执行 `CREATE EXTENSION IF NOT EXISTS vector`（报表/AI 向量检索在 P1 使用，P0 只保证环境零改动）。
 
 ## 质量门（PR 必须全绿）
 
@@ -31,7 +31,7 @@ JDK **21**（固定版本）、Maven 3.9+、Node.js 20+ LTS、PostgreSQL 16+（�
 | 单元测试 | `mvn -B test`；common 工具核心覆盖率 100%，整体 ≥ 80% | ✅ |
 | 架构测试 | ArchUnit（模块边界 / 依赖单向 / 五层分包）+ `ApplicationModules.verify()` | ✅ |
 | 集成测试 | Testcontainers（PostgreSQL + Redis）跑 `@SpringBootTest`、Flyway 空库迁移 | ✅ |
-| 安全扫描 | OWASP Dependency-Check + License 扫描（CI） | ✅ |
+| 安全扫描 | License 扫描（CI）；**OWASP Dependency-Check 属 P1**（P0 依赖面小、无认证代码） | ✅（License） |
 | 前端 | `npm run build`（CI 独立 Job） | ✅ |
 
 **小步推进**：一次改动一个主题，改完立刻跑对应测试（`mvn -pl <模块> -am test` 或 `npm run build`）。

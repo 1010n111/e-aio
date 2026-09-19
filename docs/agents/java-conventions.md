@@ -13,7 +13,7 @@
 | 校验 | Controller 入参 `@Validated`；自定义约束 `@EnumValid` / `@Mobile` / `@IdCard` / `@Money`（common.validation） |
 | DTO 映射 | **跨模块契约转换一律 MapStruct**（`componentModel="spring"`、`unmappedTargetPolicy=ERROR`，编译期报错）；模块内非性能敏感的低频拷贝可用 common `BeanUtils` |
 | 主键 | `IdGenerator`（雪花，long）统一生成 |
-| JSON | 统一 `JsonUtils`（Jackson）；业务模块不自建 ObjectMapper |
+| JSON | 统一 `JsonUtils`（Jackson 3，Boot 4 管理）；多态 API，业务模块不自建 ObjectMapper、不引用 Jackson 类型 |
 | 敏感数据 | 存储原文，展示层经 `@Sensitive` 脱敏（手机/证件/银行卡/邮箱） |
 | 日志 | 结构化 JSON 日志（ts/level/traceId/module/msg）；不打印敏感字段 |
 
