@@ -21,3 +21,10 @@ eaio:
     # 集成测试用的**固定**参数加密主密钥（32 字节 Base64）：只为让 SECRET 类参数可读写。
     # 生产环境必须由环境变量 EAIO_PARAM_CRYPTO_KEY 注入，绝不入库/入仓（P1 册 3.1.5 自举问题）。
     crypto-key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+  file:
+    # 文件中心（P1 T9）：存储类型是**部署期属性**（不是参数中心的键，理由见《实现注记（T9）》）；
+    # 根目录指向构建目录，避免集成测试往开发机的 ${user.home}/.eaio/files 写数据。
+    # 这里同时钉住两个默认值：CI 上"配置漂移导致 IT 整片起不来"就能一眼看出是配置问题
+    # （根目录不可用是**拒绝启动**，见 LocalFileStorage 的启动校验）。
+    storage-type: LOCAL
+    local-root: target/it-files

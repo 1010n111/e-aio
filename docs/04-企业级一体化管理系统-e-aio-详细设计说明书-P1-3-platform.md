@@ -702,6 +702,25 @@ sequenceDiagram
 | `FileAppService` | 重复调 `mergeChunks` | 第二次返回同一 `fileId`（不新建 `file` 行） |
 | `FileController`（集成） | 无权限下载他人文件 | 20017，且写了一条"拒绝下载"的留痕 |
 
+**实现注记（T9 已落地，2026-09-20）**——落地时与本册口径的差异/补充，逐条登记（评审按此对照）：
+
+| # | 本册口径 | 落地实现 | 理由 |
+|---|---|---|---|
+| 1 | 3.3.3 的分片上传（会话/分片/UPSERT/合并幂等） | **本票只落地单文件路径**：`Upload`/`GetMeta`/`GetUrl`/`Download`(POST+GET)/`Bind`/`Del`/`GetPage` + `FileApi` 的单文件方法；**`uploadChunk`/`mergeChunks` 与 `FileChunkCmd`/`FileMergeCmd`/`FileChunkResult` 归 #22**，届时以**新增方法**进契约（5.1"只增不改"）。表结构不受影响：V4 已按 4.3.6/4.3.7 把三张表一次建好 | 表可以先建（迁移脚本发布后不可改），契约方法不能先写：`FileApi` 是冻结面，未实现的方法留在接口里就是"编译期通过、运行期抛未实现"，比让它晚一票进来更危险 |
+| 2 | 3.3.2 `platform.file.local-root`（参数中心，默认 `${user.home}/.eaio/files`） | 改读**部署属性** `eaio.file.local-root`（默认值仍是 `${user.home}/.eaio/files`，并展开 `${user.home}`/`~`）；`FileStorageLocation` 在**启动期**解析一次并缓存。7.2 的参数行保留登记，但运行期不再回源 | 根目录必须在**迁移完成之前**确定：`LocalFileStorage` 的启动校验（不可写即拒绝启动）是构造期行为，而参数中心读值要连库——实测让应用上下文启动依赖"迁移已跑完"的顺序（IT 里直接表现为 `relation "eaio_platform.param" does not exist` → 上下文起不来）。该键在 7.2 本来就标"热更新：否" |
+| 3 | 3.3.2 `platform.file.storage-type`（参数中心）与 S3FileStorage（可选 profile `s3`） | 改读**部署属性** `eaio.file.storage-type`（默认 `LOCAL`）；**S3 适配器本票不实现**（登记为未做）。"配成 S3 但没有适配器"在**构造期**直接失败（`SystemException` → 启动失败），不是首次上传才 20015 | 同第 2 条的自举理由。P1-C5 已经规定"读按行上的 `storage_type`"，新写的存储类型是**部署事实**；静默回落到本地盘会让"配了 S3 却写到本地"变成一次数据迁移事故 |
+| 4 | 3.3.4 预签名密钥来自环境变量 `EAIO_FILE_PRESIGN_SECRET`（≥32 字节） | `FilePresignTokenService` 读 `EAIO_FILE_PRESIGN_SECRET`（可用 `eaio.file.presign-secret` 属性覆盖，便于 IT）；**缺失/过短 → 启动期记 ERROR**，之后所有 `verify` 返 INVALID、`sign` 抛 **20016**（不是 10500） | 不写成"启动失败"：空应用（无库无 Redis）必须能启动（P0 冻结），而预签名失效是运行期可解释、可观测的状态。也绝不"没配就随机生成"（重启即全链路失效）或"没配就跳过校验"（等于任意文件下载漏洞） |
+| 5 | 3.3.8"先比签名再判时效" + 5.2 `GetUrl` 的 20016 | `verify(fileId, exp, sig)` 的顺序：密钥可用性 → `exp` 可解析 → `sig` 十六进制可解析 → **`MessageDigest.isEqual` 常量时间比较** → `exp > now`。返回三态（`VALID`/`INVALID`/`EXPIRED`），对外一律 20016 | 三态分开是为了日志与排障能区分"被篡改"和"过期"；对调用方是同一个码（5.2 只给了 20016）。`exp` 畸形按 INVALID（签名不可判定 ≠ 过期） |
+| 6 | 3.3.4 下载的权限判定（三者任一）与 5.2 的端点权限点 | **POST** `/platform/file/Download` 保留 `@PreAuthorize('platform:file:download')`；**GET（预签名）路径不加 `@PreAuthorize`**，由 `FileAccessGuard` 判"本人 / 同组织 / 权限点"三者任一；`GetMeta`、`GetUrl` 在控制器里先调同一个 `requireVisible`（不可见即 20017） | 5.2 给 `GetUrl` 的权限点是 **`platform:file:get`**：若 GET 再要求 `:download`，"只有 `:get` 的非上传者/非同组织用户"会拿到一条签好名却必然 10403 的链接（签名白签），"上传了文件但只有 `:get` 的调用方"也下不了自己的文件。安全不降：`requireVisible` 就是那套三者任一判定，token 只证明"链接是本站签发的"。`GetMeta` 同样收敛是必要的——元数据含文件名/摘要/上传者，属信息泄漏面 |
+| 7 | 5.2 的 `Del` 入参 `{fileId, version}` vs 5.4 的 `FileApi.del(long fileId)` | 版本判定下沉到 `FileAppService.del(FileDelCmd)`：查行 → 比版本（不符即 10003）→ **`FileStore.softDelete`（逻辑删除 API）**；`FileApi.del(long)` 保持 5.4 的无版本签名（javadoc 写明"跨模块契约没有版本"） | 版本比对放在控制器是**两个事务**（TOCTOU 窗口）；放进服务就是一个事务。两条路径的校验强度差异是契约决定的，写进 javadoc 而不是留在代码里让人猜。**另有一处实测坑**：`deleted` 是 `@TableLogic` 列，MyBatis-Plus 的 `updateById` **不会**把它写进 SET 子句（UPDATE 正常执行、行却还是 `deleted = false`——静默无效的软删），必须走 `deleteById`；软删时间落在 `updated_at`（表里没有 `deleted_at` 列，4.3.5） |
+| 8 | 4.2 的统一列口径 vs 例外清单 | `file`/`file_upload_session` 按 3.5 补 `deleted`；**`file_chunk` 与 `file_binding` 不加** `deleted`（4.2 例外清单：分片只追加、关系行解绑即物理删），唯一键就是 4.3.8 原样的 `uk_file_binding_triple`（非部分索引），绑定幂等靠 `ON CONFLICT DO NOTHING` | 例外清单比通用口径**更具体**，按"更具体者优先"适用；P1 没有解绑接口，逻辑删除列只会是死列（YAGNI） |
+| 9 | 3.3.3 上传路径的"落盘 → INSERT" | 除了校验失败要清临时文件外，**`INSERT`/事件登记失败（事务将回滚）也要清掉刚落下的文件**；清理失败的清理动作只记 ERROR | 孤儿清理任务是按 `file` 表的行做工的：**库里没有行 = 没有任何路径能清掉这个文件**（永久磁盘泄漏）。反向的"行在但盘上悬空"才由 `platform.file.orphan.clean` 兜底。事务**提交阶段**才失败的情况仍会留下文件——那无法用应用代码兜住，不为它加补偿逻辑 |
+| 10 | 3.4.5 的 6 个内置任务；4.5 种子 ID 51–56 | 本票只注册 **ID 53 `platform.file.orphan.clean`** 的处理点（两段式：未绑定且超 `orphan-retain-days` → 软删；软删超 `purge-days` → 盘→绑定→库）；**不新增 job 行**。ID 52 `platform.file.session.expire` 的处理点随 **#22** 落地——在此之前启动期会有一条 T7 的显式跳过 ERROR（"任务处理点未注册，已跳过调度"），那是让缺口可见、不是故障，且**不影响本票验收第 5 条**（孤儿 + 软删清理由 ID 53 一个任务承担两段） | 任务注册表（`JobHandlerRegistry`）按 Bean 收集可执行点，"先种行、处理点随能力的票注册"是 T7 定下的先例；分片会话表在 #22 之前没有写入方，先写清理逻辑等于给空表写代码 |
+| 11 | 4.3.6/4.3.7 的两张分片表 | V4 一次建好三张分片相关表（`file_upload_session`/`file_chunk` + `file`/`file_binding`），并按第 8 条补 `deleted`；另建 `idx_file_upload_session_status_created(status, created_at)` 供会话保留期清理走索引 | 迁移脚本一旦发布不可修改（checksum），先建表比让 #22 再补一个 V 脚本便宜。额外索引是**加法**，脚本头已登记 |
+| 12 | 6.2 的 `FileRoundTripIT` | 落地 5 个用例：上传→下载→删除（字节/sha256/响应头/软删标记/删除后 20014）、预签名（有效 / 篡改 / 换 fileId / 过期 / 裸链接，各 20016）、可见性（本人可下、异组织他人 20017 + 留痕、GetMeta 同样 20017）、校验与幂等（20012 / 读不需要幂等键 / 写缺键 10001 / Del 版本过期 10003）、绑定与分页（重复绑定只 1 行、按 bizType+bizId 过滤、列表不含物理路径） | 6.2 的单行口径拆成 5 条用例是为了让失败信息能直接指认违反的是哪一条。**IT 必须自己钉住身份**：`OrgContextPort` 替身是静态的、多个 IT 类共享同一 JVM，上一个测试类留下的"当前用户/组织"会带进来（实测：不钉住时文件以别的组织身份上传，下载判定随上下文漂移而红），因此每个用例开头显式设置组织/用户 |
+| 13 | 7.2 的三个 `platform.file.*` 保留期键（`session-retain-days`/`orphan-retain-days`/`purge-days`） | 代码按 7.2 的键名与默认值读取（`FileParams`），**种子里没有这三行**（T4 只种了 6 个 `platform.file.*` 键），读不到即用默认值（7/7/30），种子里补上即生效、不需要改代码 | 补种子属 T4 范围且"参数 ID 区间"是既有先例（1–10 / 21–45 / 51–56 / 61–63），本票**不新增参数行**（7.2 是唯一来源，但落地与否要看种子）。登记为**待办**：谁补种子谁把 `hot_reload`/`param_group`（`file`）按 7.2 与既有先例填上 |
+| 14 | 本票**未做**（登记承接方） | ① `S3FileStorage` 与 `s3` profile（#22 之后或独立票）；② 分片上传/合并全会话（#22）；③ ID 52 会话过期任务的处理点（#22）；④ `FileApi.download` 的 `inline` 参数在 HTTP 面恒为附件（响应用 `attachment`）——本册 3.3.4 的响应头就是 `attachment`；⑤ `platform.file.storage.error` 指标（归 monitor 票，`MonitorApi` 未交付）；⑥ 秒传/物理去重（3.3.7 明确不做） | 逐条都有票面归属；写清"谁接"比留一句"TODO"有用 |
+
 ### 3.4 定时任务（Spring Task + ShedLock：注册 / 启停 / 日志 / 重试 / 告警）
 
 #### 3.4.1 设计目标与安全边界
@@ -2276,6 +2295,9 @@ public interface NotifyTemplateApi {
 ```
 
 **事务与耗时语义（契约的一部分，不允许实现悄悄改变）**：`ParamApi`/`DictApi`/`CacheApi`/`MonitorApi`/`NoticeApi`/`NotifyTemplateApi` 的方法**不开启事务**（由调用方决定，跨模块同事务由调用方的事务覆盖，HLD 2.4.2）；`FileApi.upload/mergeChunks` 与 `ExcelApi.export/importData` **自己开启独立事务**（文件与任务的元数据写入必须原子，且不应把调用方事务拖长）；所有方法**同步返回**，长耗时操作（Excel 执行、任务执行）一律异步并由 `taskId`/`runId` 交付结果。
+
+> **事务实现注记**：`FileApi.upload/mergeChunks` 使用独立事务；其他写路径不使用 `REQUIRES_NEW`。
+> 应用服务可使用 `REQUIRED` 将多步写入与事件登记保持原子，并允许调用方事务覆盖。
 
 ### 5.5 事件契约
 

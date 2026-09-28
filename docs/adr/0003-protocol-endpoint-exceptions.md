@@ -24,7 +24,7 @@ ADR-0001 冻结了"统一 POST + JSON + HTTP 恒 200 + 业务码在 `Result.code
      | `/.well-known/openid-configuration`、`/oauth2/jwks` | GET + JSON（发现文档） | OIDC Discovery、RFC 8414 |
      | `/userinfo` | GET/POST + Bearer + JSON（按 OIDC，非 `Result`） | OIDC Core §5.3 |
      | `/saml2/metadata`、`/saml2/sso`、`/saml2/acs`、`/saml2/slo` | GET/POST + XML + 302 | SAML 2.0 Web SSO |
-     | `/api/platform/file/download`（流式）、`/api/platform/file/chunk`（分片上传，PUT/流） | 二进制 + `Content-Length`/`Range` | HTTP 语义；ADR-0001 无法表达二进制与断点续传 |
+     | `/api/platform/file/Download`（POST JSON、GET 预签名查询；流式）、`/api/platform/file/chunk`（分片上传，PUT/流） | 二进制 + `Content-Length`/`Range` | P1 platform 文件中心；ADR-0001 无法表达二进制与断点续传 |
 2. **封闭清单**：例外以**逐路径登记**落 `docs/agents/api-conventions.md` 的"协议端点例外清单"表；**不在表内的路径一律常规模式**，需要新增例外必须走 Issue 评审 + 更新该表。
 3. **前端纪律**：前端请求封装对例外路径**不套** `Result` 解包与 `10401` 跳登录逻辑（协议端点自己处理错）；常规模式仍按 `Result.code` 判定。
 4. **过滤链纪律**：`TraceIdFilter` 覆盖全部路径（含例外）；`IdempotencyFilter` 只作用于常规模式的写接口；`ApiResponseAdvice`/`GlobalExceptionHandler` 对例外路径**不介入**（否则会二次包装）。

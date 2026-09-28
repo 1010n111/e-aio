@@ -54,6 +54,16 @@ const routes = [
           permission: 'platform:job:list',
         },
       },
+      {
+        path: 'platform/file',
+        name: 'platform-file',
+        component: () => import('@/views/platform/file/FileList.vue'),
+        meta: {
+          title: '文件中心',
+          // 同 3.10.2：上传/下载/删除/绑定按钮不做前端隐藏，权限由后端 @PreAuthorize 兜底（7.5 遗留）
+          permission: 'platform:file:list',
+        },
+      },
     ],
   },
 ]

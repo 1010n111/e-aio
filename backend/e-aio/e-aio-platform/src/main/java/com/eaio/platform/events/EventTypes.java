@@ -47,6 +47,10 @@ public final class EventTypes {
         types.put(JobFailedEvent.class.getName(), JobFailedEvent.class);
         // 死信事实本身不进发件箱（见 InternalFactEvent），登记它只是为了"事件清单完整"
         types.put(EventDeadLetteredEvent.class.getName(), EventDeadLetteredEvent.class);
+        // T9（文件中心）追加：3.9.1 清单第 5/6 行。audit 未交付前没有监听方，但登记必须有——
+        // 漏登记的表现是"首次投递成功、重投永远解不开 → 死信"（EventTypesTest 会机械检查这一条）。
+        types.put(FileUploadedEvent.class.getName(), FileUploadedEvent.class);
+        types.put(FileDeletedEvent.class.getName(), FileDeletedEvent.class);
         return Map.copyOf(types);
     }
 }

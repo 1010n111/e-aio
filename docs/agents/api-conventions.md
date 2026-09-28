@@ -21,7 +21,7 @@
 | `/.well-known/openid-configuration`、`/oauth2/jwks` | GET + JSON | OIDC Discovery、RFC 8414 |
 | `/userinfo` | GET/POST + Bearer + JSON（非 `Result`） | OIDC Core §5.3 |
 | `/saml2/metadata`、`/saml2/sso`、`/saml2/acs`、`/saml2/slo` | GET/POST + XML + 302 | SAML 2.0 Web SSO |
-| `/api/platform/file/download`、`/api/platform/file/chunk` | 二进制流 + `Content-Length`/`Range` | HTTP 语义（断点续传） |
+| `/api/platform/file/Download`（POST JSON、GET 预签名查询）、`/api/platform/file/chunk` | 二进制流 + `Content-Length`/`Range` | P1 platform 文件中心；HTTP 语义（断点续传） |
 
 约定：`TraceIdFilter` 覆盖全部路径；`IdempotencyFilter` 只作用于常规模式写接口；`ApiResponseAdvice` / `GlobalExceptionHandler` 不介入例外路径；前端请求层对例外路径走独立封装（不套 `Result` 解包与 `10401` 跳登录）。
 
