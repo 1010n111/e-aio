@@ -192,6 +192,12 @@ cd frontend && npm test && npm run lint && npm run build
 
 ---
 
+## 🔗 AI 中转站邀请
+
+需要使用 AI 中转服务，可通过 [DeepKey 邀请链接](https://deepkey.top/register?aff=z9rX) 注册。
+
+---
+
 ## 🤝 开源协作（接受 PR）
 
 本项目**全开源、接受社区 Pull Request**，欢迎共建：
