@@ -1,7 +1,7 @@
 # CONTEXT.md — e-aio 领域词汇表
 
 > 本文件是**项目语言的唯一术语表**（glossary only）：只定义"用什么词、指什么"，不含实现细节、不写成规格。
-> 上游冲突时的判定顺序见 [AGENTS.md](AGENTS.md)：AGENTS 系列 > `03 概要设计` > `02 需求规格` > `01 可研`；已落 ADR 的决策以 [docs/adr/](docs/adr/) 为准。
+> 权威按用途分层：代理流程看 [AGENTS.md](AGENTS.md) 与 `docs/agents/`；术语看本文件；已落 ADR 的决策看 [docs/adr/](docs/adr/)；产品需求与设计按 `03 概要设计` > `02 需求规格` > `01 可研`。
 > 命名空间、目录结构等实现位置由 [docs/agents/](docs/agents/) 承载，本文件不重复。
 
 ## 项目定位

@@ -22,15 +22,17 @@
 
 `docs/agents/` 是代理指令目录（本套 AGENTS 分册），是 `docs/` 下唯一不遵循序号命名的目录。
 
+其中 `task-workflow.md` 是实现类任务的入口；其余文件按专题提供按需加载的约定。
+
 该目录里另有一类**批次交接文档** `handoff-<批次>-<模块>.md`（给接手的代理或人看：当前进度与提交线、LIVE TODO、环境踩坑与复现命令、子代理派工模板、不能碰的冻结件）。它**不是评审基准**，与 AGENTS 分册的效力不同；现有：`handoff-P1-3-platform.md`。
 
-另有两处非设计文档载体：根 [`CONTEXT.md`](../CONTEXT.md)（**术语表**：项目语言与契约名词的唯一定义处）与 [`docs/adr/`](../adr/)（**ADR**：难逆 + 需背景 + 真实取舍的决策，命名 `NNNN-<slug>.md`）。术语冲突以 CONTEXT.md 为准，已落 ADR 的决策以 ADR 为准（上游优先级仍见 [AGENTS.md](../../AGENTS.md)）。
+另有两处非设计文档载体：根 [`CONTEXT.md`](../CONTEXT.md)（**术语表**：项目语言与契约名词的唯一定义处）与 [`docs/adr/`](../adr/)（**ADR**：难逆 + 需背景 + 真实取舍的决策，命名 `NNNN-<slug>.md`）。代理流程以 [AGENTS.md](../../AGENTS.md) 与本目录的流程分册为准；术语冲突以 `CONTEXT.md` 为准；已落 ADR 的决策以 ADR 为准；产品需求与设计按 `03 > 02 > 01`。
 
 ## 开发队列（HLD 13.2）
 
 P0 工程骨架 + common → P1 平台底座（platform/iam/audit/workflow/approval/mdm/…）→ P2 业务域（oa/crm/inventory/finance/hr/project/scm/…）→ P3 开放定制与 AI 增强。
 
-写代码前先确认目标模块属于哪一批，不跨批次提前实现。常用章节：HLD 2.2 模块边界 / 2.6 API / 5.1 common / 13.2 队列。
+实现类任务按 [task-workflow.md](task-workflow.md) 确认目标模块属于哪一批，不跨批次提前实现。文档与工具任务按对应专题分册执行。常用章节：HLD 2.2 模块边界 / 2.6 API / 5.1 common / 13.2 队列。
 
 ## 新增文档
 
