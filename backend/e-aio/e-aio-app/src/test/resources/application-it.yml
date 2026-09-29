@@ -12,6 +12,11 @@
 spring:
   autoconfigure:
     exclude:
+  datasource:
+    hikari:
+      # 每个 IT 类通常持有独立 Spring 上下文；小池避免多上下文叠加耗尽 PG 默认连接数。
+      maximum-pool-size: 4
+      minimum-idle: 0
   flyway:
     # 显式开启：集成测试要真跑迁移，不依赖"默认是 true"
     enabled: true

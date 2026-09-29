@@ -4,7 +4,7 @@
 
 ## 0. 一句话状态
 
-P1-3 分册的 **T1–T8 已交付并关票**（#12–#19、#26 已 CLOSED），**#20（T9 文件中心）正在由子代理实现中**，#21–#25 未开工；spec 票 #11 是权威需求源。本轮对话的 goal 工具里有一个活目标「做完P1-3」（round 56/256）——接手时先 `get_goal` 拿 goal_id/revision。
+P1-3 分册的 **T1–T14 已落地到当前工作树**（#20–#24 功能代码、#25 契约/权限收口已在本地），容器验收与性能抽验已完成；本地复核与选择性提交待收口，外部双轴 review 代理因额度不可用未完成，issue 状态不改。spec 票 #11 是权威需求源。
 
 ## 1. 权威需求与拆分（不要去别处找需求）
 
@@ -20,14 +20,14 @@ P1-3 分册的 **T1–T8 已交付并关票**（#12–#19、#26 已 CLOSED），
 
 **推送决策仍悬空**：`main` 领先 `origin/main` 20+ 个提交，CI/Release **从未跑过**。`docs/agents/git-workflow.md` 要求 PR 门槛=CI 全绿+1 名维护者评审。下一步需用户裁决：① 推 branch 开 PR 让 CI 跑；② 直推 main；③ 继续纯本地。**不要擅自 push。**
 
-## 3. 正在进行：`#20`（T9 文件中心）
+## 3. 当前落地状态：`#20–#25`（T9–T14）
 
-- 子代理 id：`3d5f1ef4-4a60-497e-a93f-04713ed927d2`（`send_message` 可续推；`list_agents` 可查活）。
-- 已落盘（未提交）：`api/FileApi`+10 DTO+`port/AuditPort`、`domain/file/*`、`application/file/*`（`FileAppService` 491 行）、`infrastructure/storage/*`（`LocalFileStorage`/`FilePresignTokenService`/`FileStorageConfig`）、`infrastructure/persistence/{FileStore,FileMapper,FileBindingMapper}`、`infrastructure/web/FileController`、`events/{FileUploadedEvent,FileDeletedEvent}`、`V4__file_center.sql`、`FileOrphanCleanHandler`、6 个单测类 + `FileRoundTripIT`、前端 `api/platform/file.js`(+test)、`views/platform/file/FileList.vue`、共享层 `frontend/src/api/request.js`（blob/upload 旁路）、`ApiResponseAdvice` 4 行 `Resource` 旁路。
-- **我已下的裁决（复审按这个验收）**：分片/合并归 **#22**；V1–V3/V5/V7 一字不改；`file_binding` 去 `deleted`（§4.2 例外清单）；存储类型用属性 `eaio.file.storage-type`（默认 LOCAL，进参数中心的是 `platform.file.local-root`）；S3 本票不做；预签名 `sig=hex(HMAC-SHA256(secret, fileId+"|"+exp))`，secret=`EAIO_FILE_PRESIGN_SECRET`(≥32B)，不可用即启动 ERROR + 一律 20016；可见性=本人/同组织/权限点，拒绝=**20017**（不复用 10403），上下文缺席只允许本人；`FileDTO` 不含 `storagePath`；留痕 logger 逐字 `com.eaio.platform.audit.fallback` + 计数 `platform.audit.fallback.count`；清理任务用种子里已有的 `job_code`（ID 52 会话清理属 #22，本票只登记缺口）。
-- **我已提并已落地的一致性意见**：预签名 GET 路径去掉 `@PreAuthorize`（否则 `:get` 用户拿签名链接也 10403）；`FilePresignTokenService.sign()` 补 `secretUsable()` 守卫；`Del` 版本判定下沉 `FileAppService.del(FileDelCmd)`；`store.insert` 失败要清盘上文件。
-- **最近一次复核（未闭环）**：`FileAppServiceTest:119-121` 断言硬编码日期路径 `2026/03/04/01/1001.txt`，而路径来自 `Instant.now()` → **必红**，已发修法（改 `matches("\\d{4}/\\d{2}/\\d{2}/01/1001\\.txt")`）；`LocalFileStorageTest` 的固定日期断言是**对的**（该测试显式传 `Instant.parse`）。
-- 待它收尾：`FileRoundTripIT` 场景全绿、前端三道门禁、《实现注记（T9）》、逐条验收映射+原始输出+未验证项。
+- #20 文件中心：单文件上传/下载/预签名/可见性/绑定/清理已在工作树；`FileRoundTripIT` 已存在。
+- #22 分片：`FileAppService.uploadChunk/mergeChunks`、`FileSessionExpireHandler`、前端 `uploadLarge` 续传已在工作树；合并完成现在检查会话状态更新结果。
+- #23 Excel：`ExcelTaskAppService`、`ExcelKit`、任务页和错误文件链路已在工作树；取消竞态、实时状态和进度百分比已修复；`ExcelTaskIT` 已通过，10 万行堆峰值抽验已记录。
+- #21 公告/模板：范围投递、定时扫描、已读幂等、纯文本模板渲染和两条内置模板种子已在工作树；`NoticeIT` 已通过 3/3。
+- #24 监测/告警：指标快照、死信/任务失败事件、持续时长、抑制窗口、ACK/RESOLVED、站内公告和指标白名单已在工作树；`AlertIT` 已通过 2/2。
+- #25 收口：`ApiContractTest`、`PermissionCodeContractTest`、广播 ≤1s 断言和显式性能 IT 已在工作树；性能证据为缓存 P95 1ms、常规分页 P95 113ms、百万行分页 P95 328ms、10 万行 Excel 堆峰值 99.5MB。
 
 ## 4. 接手后立刻要做的（顺序）
 
@@ -41,19 +41,20 @@ P1-3 分册的 **T1–T8 已交付并关票**（#12–#19、#26 已 CLOSED），
    ```
    当前基线应为：checkstyle 4 模块 0 违规、common 70 / platform 188 / app 74 单测、IT 58 条。
 3. 提交（一票一提交，消息用 `git commit -F .tmp-commit-*.txt`，**先删临时文件再 `git add`**——`git add -A` 会把它裹进提交），评论票面逐条验收证据，`gh issue close`。
-4. 然后按依赖派 **#21（T12 公告/模板）→ #22（T10 分片）→ #23（T11 Excel）→ #24（T13 监测告警）→ #25（T14 交付收口）**；`#24` blocked by #21，`#25` blocked by #22–#24。
-5. 每票结束照例做一次双轴评审（`code-review` skill）+ 修 F 项，再提交。
+4. 当前按依赖收尾 **#21（T12 公告/模板）→ #22（T10 分片）→ #23（T11 Excel）→ #24（T13 监测告警）→ #25（T14 交付收口）**；功能代码、集成证据和性能抽验已在同一工作树，剩余是双轴 review、选择性提交与 issue 状态更新。
+5. 每票结束做一次双轴评审（`code-review` skill），只修复发现的阻塞/高风险项，再选择性暂存并提交。
 
 ## 5. 只剩这些活（LIVE TODO）
 
-- [ ] #20 收口（验收 5 条全绿 + 提交 + 关票）
-- [ ] #21 公告/模板（派工材料已备：《实现注记》+ §3.8 口径，见下）
-- [ ] #22 分片上传（材料已备：§3.3.3 的 637–639、`FileChunkCmd`/`FileMergeCmd`、V4 已交付不动、种子 ID 52 处理点、上限=`chunk-size×10000` 不走 50MB）
-- [ ] #23 Excel（Fesod 2.0.2-incubating、异步任务 + `taskId` 轮询、10 万行 `-Xmx512m` 峰值 ≤384MB、≤20000 行整批事务否则 1000 行/批记 PARTIAL）
-- [ ] #24 监测告警（**7 条跨票入站义务**必须写进 brief：订阅 `EventDeadLetteredEvent`→`alert(rule_code='event.dead-letter')`、`JobFailedEvent`→`job.failure`（阈值参数 `platform.job.alert.fail-threshold`）、T5 的 `platform.dict.label.miss`、T6 内部计数器、#20 的 `platform.audit.fallback.count`/`platform.file.storage.error`、T3 的 `platform.param.missing`、V9 三条内置规则各有真实消费方）
-- [ ] #25 交付收口（`PermissionCodeContractTest` 与 7.3 逐条比对、`ApiContractTest`、跨实例一致性、性能抽验、覆盖率 100%/≥80%）
-- [ ] P1-2 册 §3.15 补登 `eaio.cache.<region>.l2-ttl-seconds`（T6 留下的登记表缺口；我此前改过但**未提交**，核对工作树 ` M` 状态）
-- [ ] 设计册与实现差异注记的持续维护：每票在对应小节后追加《实现注记（Tn）》行（格式：本册口径 / 落地实现 / 理由）
+- [x] #20 文件中心：`FileRoundTripIT` 5/5，通过容器验收
+- [x] #21 公告/模板：`NoticeIT` 3/3，通过容器验收
+- [x] #22 分片上传/合并：`ChunkUploadIT` 3/3，通过容器验收
+- [x] #23 Excel：`ExcelTaskIT` 2/2；`-DargLine=-Xmx512m` 峰值 99.5MB
+- [x] #24 监测告警：`AlertIT` 2/2，通过容器验收
+- [x] #25 收口：契约/权限、广播 ≤1s、性能 P95 与 Docker `verify` 证据已记录
+- [x] P1-2 册 §3.15 已登记 `eaio.cache.<region-kebab>.l2-ttl-seconds`（历史提交 `7df4346`）
+- [x] 设计册与实现差异注记已补齐 T9–T14，并回写本次验收数值
+- [ ] 外部双轴 code review（代理额度不可用）；本地复核、按 ticket 选择性暂存提交；不 push、不关 issue
 - [ ] README/AGENTS 等收尾（若有）
 
 ## 6. 环境与踩坑（复现成本最高，务必先读）

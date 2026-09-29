@@ -492,7 +492,9 @@ class EventRetryIT extends IntegrationTestBase {
                         "spring.datasource.username=" + environment.getProperty("spring.datasource.username"),
                         "spring.datasource.password=" + environment.getProperty("spring.datasource.password"),
                         "spring.data.redis.host=" + environment.getProperty("spring.data.redis.host"),
-                        "spring.data.redis.port=" + environment.getProperty("spring.data.redis.port"))
+                        "spring.data.redis.port=" + environment.getProperty("spring.data.redis.port"),
+                        // 第二个上下文代表独立部署实例，必须使用不同 workerId 才能保持雪花 ID 全局唯一。
+                        "eaio.id.worker-id=2")
                 .run();
     }
 

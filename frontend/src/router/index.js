@@ -64,6 +64,33 @@ const routes = [
           permission: 'platform:file:list',
         },
       },
+      {
+        path: 'platform/excelTask',
+        name: 'platform-excel',
+        component: () => import('@/views/platform/excel/ExcelTaskList.vue'),
+        meta: {
+          title: 'Excel 任务',
+          permission: 'platform:excelTask:list',
+        },
+      },
+      {
+        path: 'platform/notice',
+        name: 'platform-notice',
+        component: () => import('@/views/platform/notice/NoticeList.vue'),
+        meta: { title: '公告管理', permission: 'platform:notice:list' },
+      },
+      {
+        path: 'platform/notifyTemplate',
+        name: 'platform-notify-template',
+        component: () => import('@/views/platform/notice/TemplateList.vue'),
+        meta: { title: '通知模板', permission: 'platform:notifyTemplate:list' },
+      },
+      {
+        path: 'platform/monitor',
+        name: 'platform-monitor',
+        component: () => import('@/views/platform/monitor/MonitorView.vue'),
+        meta: { title: '监测与告警', permission: 'platform:monitor:metrics' },
+      },
     ],
   },
 ]

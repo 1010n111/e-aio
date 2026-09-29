@@ -7,6 +7,7 @@ import com.eaio.platform.domain.job.JobRun;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
@@ -51,6 +52,14 @@ public interface JobRunMapper extends BaseMapper<JobRun> {
             + "duration_ms = (EXTRACT(EPOCH FROM (now() - start_time)) * 1000)::INT, error_message = #{message} "
             + "WHERE status = 'RUNNING' AND start_time < #{staleBefore}")
     int markStaleRunningAsFailed(@Param("staleBefore") Instant staleBefore, @Param("message") String message);
+
+    /** 当前任务自最近一次成功以来的终态失败次数（包含刚写定的当前行）。 */
+    @Select("SELECT count(*) FROM eaio_platform.job_run failed "
+            + "WHERE failed.job_code = #{jobCode} AND failed.status IN ('FAILED', 'TIMEOUT') "
+            + "AND failed.start_time > COALESCE((SELECT max(success.start_time) "
+            + "FROM eaio_platform.job_run success WHERE success.job_code = #{jobCode} "
+            + "AND success.status = 'SUCCESS'), TIMESTAMPTZ '-infinity')")
+    long consecutiveFailures(@Param("jobCode") String jobCode);
 
     /** 分批物理删除早于 {@code before} 的运行日志；返回本批删除行数（调用方循环到不足一批为止）。 */
     @Delete("DELETE FROM eaio_platform.job_run WHERE id IN "

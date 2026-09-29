@@ -77,7 +77,13 @@ public class ModuleFlywayConfig {
                     // 默认把 ${...} 当自己的占位符并在缺值时直接失败（实测报 "No value provided for
                     // placeholder: ${user.home}"）。把它映射成自身 = 原样保留，且不关闭占位符机制——
                     // 后续脚本真要用 Flyway 占位符时仍可正常声明。
-                    .placeholders(Map.of("user.home", "${user.home}"))
+                    // Notification templates use these variables at render time; migrations must retain them verbatim.
+                    .placeholders(Map.of(
+                            "user.home", "${user.home}",
+                            "jobCode", "${jobCode}",
+                            "failCount", "${failCount}",
+                            "ruleName", "${ruleName}",
+                            "metricValue", "${metricValue}"))
                     .load();
             modules.add(new ModuleInstances.Module(module, schema, flyway));
         }

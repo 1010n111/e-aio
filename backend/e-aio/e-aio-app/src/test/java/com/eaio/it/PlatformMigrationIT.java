@@ -186,7 +186,7 @@ class PlatformMigrationIT extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("种子（R__）落库：13 条系统参数（1–10 + T8 的 61–63）、级别 SYSTEM、内置不可删")
+    @DisplayName("种子（R__）落库：17 条系统参数（基础 1–10、文件会话 11–13、事件 61–64）、级别 SYSTEM、内置不可删")
     void seedRowsAreLoaded() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
@@ -203,10 +203,10 @@ class PlatformMigrationIT extends IntegrationTestBase {
                 "select param_value from eaio_platform.param where param_key = 'platform.time.display-zone'"
                         + " and param_level = 'SYSTEM' and owner_id = 0",
                 String.class)).isEqualTo("Asia/Shanghai");
-        // T8 追加 3 个事件可靠性参数（ID 61–63，P1 册 7.2 的 platform.event.*）→ 内置 SYSTEM 参数 13 条
+        // 文件会话参数（ID 11–13）与 T8/T13 参数（ID 61–64）共同追加到基础 10 条 → 内置 SYSTEM 参数 17 条
         assertThat(jdbc.queryForObject(
                 "select count(*) from eaio_platform.param where param_level = 'SYSTEM' and owner_id = 0"
-                        + " and builtin = true", Integer.class)).isEqualTo(13);
+                        + " and builtin = true", Integer.class)).isEqualTo(17);
         assertThat(jdbc.queryForObject(
                 "select param_value from eaio_platform.param where param_key = 'platform.event.retry-max'"
                         + " and param_level = 'SYSTEM' and owner_id = 0",

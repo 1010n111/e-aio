@@ -26,6 +26,8 @@ public class FileParams {
 
     /** 软删后多少天物理删除（7.2 默认 30；键未种，读默认值）。 */
     public static final String PURGE_DAYS = "platform.file.purge-days";
+    public static final String SESSION_TTL_HOURS = "platform.file.session-ttl-hours";
+    public static final String SESSION_RETAIN_DAYS = "platform.file.session-retain-days";
 
     /** 根目录默认值（与种子里的 {@code platform.file.local-root} 一致）。 */
     public static final String DEFAULT_LOCAL_ROOT = "${user.home}/.eaio/files";
@@ -35,6 +37,8 @@ public class FileParams {
 
     private static final int DEFAULT_ORPHAN_RETAIN_DAYS = 7;
     private static final int DEFAULT_PURGE_DAYS = 30;
+    private static final int DEFAULT_SESSION_TTL_HOURS = 24;
+    private static final int DEFAULT_SESSION_RETAIN_DAYS = 7;
 
     private final ParamResolver params;
 
@@ -50,6 +54,14 @@ public class FileParams {
     /** 软删行的物理删除门槛（天）。 */
     public int purgeDays() {
         return intValue(PURGE_DAYS, DEFAULT_PURGE_DAYS);
+    }
+
+    public int sessionTtlHours() {
+        return intValue(SESSION_TTL_HOURS, DEFAULT_SESSION_TTL_HOURS);
+    }
+
+    public int sessionRetainDays() {
+        return intValue(SESSION_RETAIN_DAYS, DEFAULT_SESSION_RETAIN_DAYS);
     }
 
     private int intValue(String key, int defaultValue) {

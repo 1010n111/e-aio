@@ -196,6 +196,15 @@ public class DictAppService {
         publishChanged(ACTION_DEL, existing.getTypeCode(), null, operator);
     }
 
+    /** Cross-module contract omits the version; read it once, then keep the same optimistic-lock guard. */
+    public void delType(long id) {
+        DictType existing = store.rowById(id);
+        if (existing == null) {
+            throw new BusinessException(PlatformErrorCode.DICT_TYPE_NOT_FOUND, "字典类型不存在：id=" + id);
+        }
+        delType(id, existing.getVersion() == null ? 0 : existing.getVersion());
+    }
+
     /** 清缓存并重载该类型；类型不存在抛 20003（5.2）。 */
     public void refresh(String typeCode) {
         if (store.rowByTypeCode(typeCode) == null) {
@@ -292,6 +301,15 @@ public class DictAppService {
         long operator = contexts.current().userId();
         store.deleteItemById(existing);
         publishChanged(ACTION_DEL, existing.getTypeCode(), existing.getItemValue(), operator);
+    }
+
+    /** Cross-module contract omits the version; preserve the same optimistic-lock guard internally. */
+    public void delItem(long id) {
+        DictItem existing = store.rowItemById(id);
+        if (existing == null) {
+            throw new BusinessException(PlatformErrorCode.DICT_TYPE_NOT_FOUND, "字典项不存在：id=" + id);
+        }
+        delItem(id, existing.getVersion() == null ? 0 : existing.getVersion());
     }
 
     // ---------------------------------------------------------------- 内部

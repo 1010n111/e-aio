@@ -4,11 +4,14 @@ import java.util.List;
 
 import com.eaio.common.api.PageResult;
 import com.eaio.platform.api.dto.FileBindCmd;
+import com.eaio.platform.api.dto.FileChunkCmd;
+import com.eaio.platform.api.dto.FileChunkResult;
 import com.eaio.platform.api.dto.FileDTO;
 import com.eaio.platform.api.dto.FileDownloadCmd;
 import com.eaio.platform.api.dto.FileQuery;
 import com.eaio.platform.api.dto.FileUploadCmd;
 import com.eaio.platform.api.dto.FileUrlDTO;
+import com.eaio.platform.api.dto.FileMergeCmd;
 import org.springframework.core.io.Resource;
 
 /**
@@ -22,9 +25,7 @@ import org.springframework.core.io.Resource;
  * **自己开启独立事务**（文件行与事件登记必须原子，且不应把调用方事务拖长），其余方法不开启事务（5.4）。
  * 所有方法**同步返回**。
  *
- * <p><b>本票（T9）未实现分片上传</b>：5.4 的 {@code uploadChunk}/{@code mergeChunks} 与
- * {@code FileChunkCmd}/{@code FileMergeCmd} 归 #22；表结构（{@code file_upload_session}/{@code file_chunk}）
- * 已随 V4 建好，接口方法在 #22 以**新增方法**的方式进契约（5.1 契约规则：只增不改）。
+ * <p>分片上传的会话由服务端管理，重复分片覆盖写，重复合并返回原文件。
  */
 public interface FileApi {
 
@@ -36,6 +37,12 @@ public interface FileApi {
 
     /** 单文件上传；耗时与文件大小成正比（50MB ≈ 1–3s，本地盘）。自己开启事务。 */
     FileDTO upload(FileUploadCmd cmd);
+
+    /** 上传一个分片；首片创建会话，重复片幂等覆盖。 */
+    FileChunkResult uploadChunk(FileChunkCmd cmd);
+
+    /** 合并分片；缺片报 20013，过期会话报 20018。 */
+    FileDTO mergeChunks(FileMergeCmd cmd);
 
     /** 下载：返回 {@link Resource}（含 contentLength 与文件名），调用方负责关闭；{@code inline} 控制展示方式。 */
     Resource download(FileDownloadCmd cmd);
@@ -49,14 +56,14 @@ public interface FileApi {
     /** 逻辑删除（乐观锁由 HTTP 面的 {@code {fileId, version}} 承担）；物理清理由 {@code platform.file.orphan.clean} 负责。 */
     void del(long fileId);
 
-    /** 绑定业务对象（幂等：重复绑定不报错；也接受 {@code bizType}/{@code bizId} 成对为空表示"只校验文件存在"）。 */
-    void bind(FileBindCmd cmd);
+    /** 绑定业务对象（幂等：重复绑定不报错）。 */
+    void bind(String bizType, long bizId, List<Long> fileIds);
 
     /** 分页（管理页）；{@code bizType}+{@code bizId} 经 {@code file_binding} 关联过滤。 */
     PageResult<FileDTO> getPage(FileQuery query);
 
-    /** 便捷重载：绑定一批文件到同一业务对象（等价于 {@link #bind(FileBindCmd)}）。 */
-    default void bind(String bizType, long bizId, List<Long> fileIds) {
-        bind(new FileBindCmd(bizType, bizId, fileIds));
+    /** 入参对象兼容入口；跨模块冻结签名是上面的三参数方法。 */
+    default void bind(FileBindCmd cmd) {
+        bind(cmd.bizType(), cmd.bizId(), cmd.fileIds());
     }
 }

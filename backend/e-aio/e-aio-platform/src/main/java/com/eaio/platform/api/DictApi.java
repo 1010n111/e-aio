@@ -14,14 +14,7 @@ import com.eaio.platform.api.dto.DictTypeSaveCmd;
  *
  * <p>所有方法在调用方线程**同步**执行，**不开启事务**（跨模块同事务由调用方的事务覆盖，P1 册 5.4）。
  *
- * <p><b>契约的两处落地口径（设计册 5.4 自相矛盾处，已登记在《实现注记（T5）》）</b>：
- * <ol>
- *   <li>{@link #del(long, int)} 与 {@link #delItem(long, int)} 的 javadoc 写"实际参数为类型 id：
- *       del(long id, int version)"，与签名的单参数不一致——按 javadoc 的**实际参数**落地为
- *       {@code (long id, int version)}：乐观锁版本是删除动作的一部分（与 5.2 端点入参 {@code {id, version}}
- *       逐字一致），只给 id 会让 {@code Del} 变成"无视并发改动的盲删"；</li>
- *   <li>{@link #getLabel(String, String)} 的语义在 3.2.1 已定死：**未命中返回原值 + WARN，不抛异常**。</li>
- * </ol>
+ * <p>{@link #getLabel(String, String)} 的语义在 3.2.1 已定死：**未命中返回原值 + WARN，不抛异常**。
  */
 public interface DictApi {
 
@@ -40,8 +33,8 @@ public interface DictApi {
     /** 更新类型（按 {@code typeCode} 定位，{@code type_code} 不可改；乐观锁过期 10003）。 */
     DictTypeDTO up(DictTypeSaveCmd cmd);
 
-    /** 逻辑删除字典类型；仍有项时抛 20008。实际参数为类型 id：del(long id, int version)。 */
-    void del(long id, int version);
+    /** 逻辑删除字典类型；仍有项时抛 20008。 */
+    void del(long id);
 
     /** 清缓存并重载该类型（DBA 绕过接口改库后的兜底）；类型不存在抛 20003。 */
     void refresh(String typeCode);
@@ -54,6 +47,6 @@ public interface DictApi {
     /** 更新项（按 {@code typeCode + itemValue} 定位；乐观锁过期 10003）。 */
     DictItemDTO upItem(DictItemSaveCmd cmd);
 
-    /** 逻辑删除字典项；实际参数为项 id：delItem(long id, int version)。 */
-    void delItem(long id, int version);
+    /** 逻辑删除字典项。 */
+    void delItem(long id);
 }

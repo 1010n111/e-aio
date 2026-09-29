@@ -21,6 +21,7 @@ export const FILE_EMPTY = 20010
 
 /** 超过单文件上限（参数 `platform.file.max-size`，默认 50MB）。 */
 export const FILE_TOO_LARGE = 20011
+export const FILE_CHUNK_INVALID = 20013
 
 /** 扩展名不在白名单（参数 `platform.file.allowed-ext`）；`Content-Type` 只作记录、不作判据。 */
 export const FILE_TYPE_NOT_ALLOWED = 20012
@@ -36,6 +37,7 @@ export const FILE_SIGNATURE_INVALID = 20016
 
 /** 无权访问该文件（上传者本人 / 同组织 / 管理员权限点，5.2 的 Download 判定）。 */
 export const FILE_ACCESS_DENIED = 20017
+export const FILE_SESSION_NOT_FOUND = 20018
 
 /** 来源取值（后端 `FileSource` + DDL `ck_file_source`，P1 册 4.3.5）。 */
 export const FILE_SOURCES = Object.freeze(['UPLOAD', 'CHUNK', 'EXPORT', 'IMPORT_ERROR', 'TEMPLATE'])
@@ -74,6 +76,9 @@ export const FILE_ALLOWED_EXTENSIONS = Object.freeze([
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
   'txt', 'csv', 'zip', '7z',
 ])
+
+/** 分片大小与参数种子默认值一致；服务端仍会校验真实参数和每片摘要。 */
+export const FILE_CHUNK_SIZE_BYTES = 5 * 1024 * 1024
 
 function optional(value) {
   const text = typeof value === 'string' ? value.trim() : value
@@ -203,6 +208,70 @@ export function upload(file, { bizType, bizId } = {}, options = {}) {
   return requestUpload(`${FILE_BASE}/Upload`, form, options)
 }
 
+async function sha256Hex(blob) {
+  const digest = await window.crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 大文件分片上传：uploadId 与已成功分片索引保存到 localStorage，网络中断后复用会话续传。
+ * 会话过期时服务端回 20018，清掉本地游标并让调用方重新选择文件。
+ */
+export async function uploadLarge(file, { bizType, bizId, chunkSize = FILE_CHUNK_SIZE_BYTES, onProgress } = {}) {
+  const total = Math.ceil(file.size / chunkSize)
+  const resumeKey = 'eaio:file-upload:' + file.name + ':' + file.size + ':' + file.lastModified
+  const readState = () => {
+    try {
+      return JSON.parse(window.localStorage.getItem(resumeKey) ?? '{}')
+    } catch {
+      return {}
+    }
+  }
+  const writeState = (state) => window.localStorage.setItem(resumeKey, JSON.stringify(state))
+  let state = readState()
+  if (!state.uploadId || state.total !== total) {
+    state = { uploadId: crypto.randomUUID(), total, done: [] }
+  }
+  const done = new Set(state.done ?? [])
+  try {
+    for (let index = 0; index < total; index += 1) {
+      if (done.has(index)) {
+        onProgress?.((done.size / total) * 100)
+        continue
+      }
+      const part = file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize))
+      const form = new window.FormData()
+      form.append('chunk', part, file.name)
+      form.append('uploadId', state.uploadId)
+      form.append('chunkIndex', String(index))
+      form.append('chunkTotal', String(total))
+      form.append('chunkSize', String(chunkSize))
+      form.append('chunkSha256', await sha256Hex(part))
+      form.append('fileName', file.name)
+      form.append('expectedSize', String(file.size))
+      await requestUpload(FILE_BASE + '/UploadChunk', form)
+      done.add(index)
+      writeState({ uploadId: state.uploadId, total, done: [...done] })
+      onProgress?.((done.size / total) * 100)
+    }
+    const body = { uploadId: state.uploadId }
+    const type = optional(bizType)
+    const id = positiveInt(bizId)
+    if (type !== undefined && id !== undefined) {
+      body.bizType = type
+      body.bizId = id
+    }
+    const result = await action(FILE_BASE + '/MergeChunks', body, { idempotencyKey: null })
+    window.localStorage.removeItem(resumeKey)
+    return result
+  } catch (error) {
+    if (error?.code === FILE_SESSION_NOT_FOUND) {
+      window.localStorage.removeItem(resumeKey)
+    }
+    throw error
+  }
+}
+
 /** 文件元数据（5.2 `/platform/file/GetMeta`）：不存在 20014、无权 20017。 */
 export function getMeta(fileId) {
   return query(`${FILE_BASE}/GetMeta`, { fileId })
@@ -277,6 +346,8 @@ const CODE_HINTS = Object.freeze({
   [FILE_STORAGE_ERROR]: '文件存储读写失败（code=20015）：磁盘或 S3 异常，请稍后重试或联系运维（不会自动换另一种存储）',
   [FILE_SIGNATURE_INVALID]: '下载链接签名无效或已过期（code=20016）：重新生成一次链接即可（本地盘链接带时效签名）',
   [FILE_ACCESS_DENIED]: '无权访问该文件（code=20017）：上传者本人、同组织或持有 platform:file:download 的管理员才能下载',
+  [FILE_CHUNK_INVALID]: '分片校验失败（code=20013）：请重传提示的分片后再合并',
+  [FILE_SESSION_NOT_FOUND]: '分片会话不存在或已过期（code=20018）：请重新选择文件上传',
   [FORBIDDEN_CODE]: '无权限（code=10403）：后端按权限点拒绝，请联系管理员分配 platform:file:* 权限',
 })
 

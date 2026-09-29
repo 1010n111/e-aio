@@ -19,10 +19,34 @@ VALUES
     (4, 'platform.file.chunk-size', 'SYSTEM', 0, '5242880', 'INT', 'file', false, true, true, 0),
     (5, 'platform.file.local-root', 'SYSTEM', 0, '${user.home}/.eaio/files', 'STRING', 'file', false, true, false, 0),
     (6, 'platform.file.session-ttl-hours', 'SYSTEM', 0, '24', 'INT', 'file', false, true, true, 0),
+    (11, 'platform.file.session-retain-days', 'SYSTEM', 0, '7', 'INT', 'file', false, true, true, 0),
+    (12, 'platform.file.orphan-retain-days', 'SYSTEM', 0, '7', 'INT', 'file', false, true, true, 0),
+    (13, 'platform.file.purge-days', 'SYSTEM', 0, '30', 'INT', 'file', false, true, true, 0),
     (7, 'platform.excel.atomic-max-rows', 'SYSTEM', 0, '20000', 'INT', 'excel', false, true, true, 0),
     (8, 'platform.excel.max-import-rows', 'SYSTEM', 0, '200000', 'INT', 'excel', false, true, true, 0),
     (9, 'platform.excel.max-export-rows', 'SYSTEM', 0, '1000000', 'INT', 'excel', false, true, true, 0),
     (10, 'platform.excel.error-max', 'SYSTEM', 0, '1000', 'INT', 'excel', false, true, true, 0)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO eaio_platform.alert_rule
+    (id, rule_code, rule_name, metric_key, operator, threshold, duration_seconds, severity, silence_seconds,
+     notify_site, enabled, builtin, created_by)
+VALUES
+    (71, 'job.failure', '任务连续失败', 'platform.job.failure', 'GTE', 3, 0, 'CRITICAL', 1800, true, true, true, 0),
+    (72, 'event.dead-letter', '事件死信', 'platform.event.dead-letter', 'GT', 0, 0, 'CRITICAL', 1800, true, true, true, 0),
+    (73, 'cache.degraded', '缓存降级', 'platform.cache.degraded', 'GT', 0, 60, 'WARN', 1800, true, true, true, 0)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO eaio_platform.notify_template
+    (id, template_code, template_name, channel, title_template, content_template, variables_json, status, builtin,
+     remark, created_by)
+VALUES
+    (74, 'platform.job.failed', '任务失败通知', 'SITE', '任务失败：${jobCode}',
+        '任务 ${jobCode} 连续失败 ${failCount} 次', '{"jobCode":true,"failCount":true}'::jsonb, 'ENABLED', true,
+        '平台内置任务失败通知', 0),
+    (75, 'platform.alert.raised', '告警通知', 'SITE', '告警：${ruleName}',
+        '告警 ${ruleName}，当前值 ${metricValue}', '{"ruleName":true,"metricValue":true}'::jsonb, 'ENABLED', true,
+        '平台内置告警通知', 0)
 ON CONFLICT DO NOTHING;
 
 -- P1 T5 落地数据字典的 4 个平台内置类型 + 15 个字典项（P1 册 4.5；册面写"14 项"，逐项枚举实为
@@ -90,16 +114,16 @@ VALUES
         true, 300, 3, 30, false, '到点的定时公告由 DRAFT 置 PUBLISHED（3.8）', 0)
 ON CONFLICT DO NOTHING;
 
--- P1 T8 追加事件可靠性的 3 个系统参数（P1 册 7.2 的 platform.event.* 三行）。ID 区间 61–70
+-- P1 T8/T13 追加事件可靠性与任务告警的系统参数（P1 册 7.2）。ID 区间 61–70
 -- （与参数 1–10、字典类型 21–24、字典项 31–45、任务 51–56 不冲突；雪花 ID 远大于 9999）。
 -- `param_group = 'event'`：7.2 的表只有「键/默认值/类型/热更新/说明」五列，没有分组列——分组是
 -- 4.3.1 的列（NOT NULL），按既有先例（time/file/excel）取能力名，登记在《实现注记（T8）》。
--- 三个键都 hot_reload：重投扫描每轮都读参数中心，改完下一轮生效（不用重启）。
+-- 这些键都 hot_reload：重投/告警每轮都读参数中心，改完下一轮生效（不用重启）。
 INSERT INTO eaio_platform.param
     (id, param_key, param_level, owner_id, param_value, value_type, param_group, encrypted, builtin, hot_reload, created_by)
 VALUES
     (61, 'platform.event.retry-max', 'SYSTEM', 0, '5', 'INT', 'event', false, true, true, 0),
     (62, 'platform.event.retry-backoff-seconds', 'SYSTEM', 0, '30', 'INT', 'event', false, true, true, 0),
-    (63, 'platform.event.delivery-retain-days', 'SYSTEM', 0, '7', 'INT', 'event', false, true, true, 0)
+    (63, 'platform.event.delivery-retain-days', 'SYSTEM', 0, '7', 'INT', 'event', false, true, true, 0),
+    (64, 'platform.job.alert.fail-threshold', 'SYSTEM', 0, '3', 'INT', 'job', false, true, true, 0)
 ON CONFLICT DO NOTHING;
-

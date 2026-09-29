@@ -20,6 +20,7 @@ import java.time.Instant;
  * @param jobCode      任务编码
  * @param runId        运行 ID（{@code job_run.id}，查日志/回溯用）
  * @param attempt      失败时的尝试次数（= 用尽重投次数后的最后一次）
+ * @param failCount    该 {@code jobCode} 自最近一次成功以来的终态失败次数
  * @param errorMessage 错误摘要（已截 2000 字符）
  * @param traceId      链路 ID
  */
@@ -29,6 +30,13 @@ public record JobFailedEvent(
         String jobCode,
         long runId,
         int attempt,
+        int failCount,
         String errorMessage,
         String traceId) implements PlatformEvent {
+
+    /** 向后兼容旧发布方；新发布方应提供持久化计算出的连续失败次数。 */
+    public JobFailedEvent(String eventId, Instant occurredAt, String jobCode, long runId, int attempt,
+            String errorMessage, String traceId) {
+        this(eventId, occurredAt, jobCode, runId, attempt, Math.max(1, attempt), errorMessage, traceId);
+    }
 }

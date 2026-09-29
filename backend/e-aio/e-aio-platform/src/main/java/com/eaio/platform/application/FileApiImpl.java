@@ -3,11 +3,15 @@ package com.eaio.platform.application;
 import com.eaio.common.api.PageResult;
 import com.eaio.platform.api.FileApi;
 import com.eaio.platform.api.dto.FileBindCmd;
+import com.eaio.platform.api.dto.FileChunkCmd;
+import com.eaio.platform.api.dto.FileChunkResult;
 import com.eaio.platform.api.dto.FileDTO;
 import com.eaio.platform.api.dto.FileDownloadCmd;
 import com.eaio.platform.api.dto.FileQuery;
 import com.eaio.platform.api.dto.FileUploadCmd;
 import com.eaio.platform.api.dto.FileUrlDTO;
+import com.eaio.platform.api.dto.FileMergeCmd;
+import java.util.List;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +37,21 @@ public class FileApiImpl implements FileApi {
         return service.upload(cmd);
     }
 
+    /** Excel 结果文件与错误文件需要保留来源；该重载只供 platform 应用层使用。 */
+    FileDTO upload(FileUploadCmd cmd, String source) {
+        return service.upload(cmd, source);
+    }
+
+    @Override
+    public FileChunkResult uploadChunk(FileChunkCmd cmd) {
+        return service.uploadChunk(cmd);
+    }
+
+    @Override
+    public FileDTO mergeChunks(FileMergeCmd cmd) {
+        return service.mergeChunks(cmd);
+    }
+
     @Override
     public Resource download(FileDownloadCmd cmd) {
         return service.download(cmd);
@@ -54,8 +73,8 @@ public class FileApiImpl implements FileApi {
     }
 
     @Override
-    public void bind(FileBindCmd cmd) {
-        service.bind(cmd);
+    public void bind(String bizType, long bizId, List<Long> fileIds) {
+        service.bind(new FileBindCmd(bizType, bizId, fileIds));
     }
 
     @Override

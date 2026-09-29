@@ -15,6 +15,8 @@ import com.eaio.common.exception.SystemException;
 import com.eaio.platform.api.dto.FileQuery;
 import com.eaio.platform.domain.file.FileBinding;
 import com.eaio.platform.domain.file.FileMetaFile;
+import com.eaio.platform.domain.file.FileChunk;
+import com.eaio.platform.domain.file.FileUploadSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -51,10 +53,15 @@ public class FileStore {
 
     private final ObjectProvider<FileMapper> files;
     private final ObjectProvider<FileBindingMapper> bindings;
+    private final ObjectProvider<FileUploadSessionMapper> sessions;
+    private final ObjectProvider<FileChunkMapper> chunks;
 
-    public FileStore(ObjectProvider<FileMapper> files, ObjectProvider<FileBindingMapper> bindings) {
+    public FileStore(ObjectProvider<FileMapper> files, ObjectProvider<FileBindingMapper> bindings,
+            ObjectProvider<FileUploadSessionMapper> sessions, ObjectProvider<FileChunkMapper> chunks) {
         this.files = files;
         this.bindings = bindings;
+        this.sessions = sessions;
+        this.chunks = chunks;
     }
 
     // ---------------------------------------------------------------- 文件行
@@ -170,6 +177,60 @@ public class FileStore {
         return bindings().purgeByFileIds(fileIds);
     }
 
+    // ---------------------------------------------------------- 分片会话
+
+    public FileUploadSession sessionByUploadId(String uploadId) {
+        return sessions().selectByUploadId(uploadId);
+    }
+
+    public int insertSession(FileUploadSession session) {
+        return sessions().insert(session);
+    }
+
+    public int claimMerge(FileUploadSession session, Instant now) {
+        return sessions().claimMerge(session.getId(), now);
+    }
+
+    public int reopenMerge(FileUploadSession session, Instant now) {
+        return sessions().reopenMerge(session.getId(), now);
+    }
+
+    public int markSessionDone(FileUploadSession session, long fileId, Instant now) {
+        return sessions().markDone(session.getId(), fileId, now);
+    }
+
+    public int expireSessions(Instant now) {
+        return sessions().expireBefore(now);
+    }
+
+    public int expireSession(FileUploadSession session, Instant now) {
+        return sessions().expireOne(session.getId(), now);
+    }
+
+    public List<FileUploadSession> expiredSessionsBefore(Instant before, int limit) {
+        return sessions().selectExpiredBefore(before, limit);
+    }
+
+    public int deleteSession(long sessionId) {
+        return sessions().deleteById(sessionId);
+    }
+
+    public int upsertChunk(FileChunk chunk) {
+        return chunks().upsert(chunk);
+    }
+
+    public List<FileChunk> chunksFor(long sessionId) {
+        return chunks().selectBySessionId(sessionId);
+    }
+
+    public int countChunks(long sessionId) {
+        return chunks().countBySessionId(sessionId);
+    }
+
+    public int deleteChunks(long sessionId) {
+        return chunks().deleteBySessionId(sessionId);
+    }
+
     // ---------------------------------------------------------------- 内部
 
     /**
@@ -231,6 +292,22 @@ public class FileStore {
         FileBindingMapper mapper = bindings.getIfAvailable();
         if (mapper == null) {
             throw new SystemException("文件中心不可用：未配置数据库（无 DataSource/FileBindingMapper）");
+        }
+        return mapper;
+    }
+
+    private FileUploadSessionMapper sessions() {
+        FileUploadSessionMapper mapper = sessions.getIfAvailable();
+        if (mapper == null) {
+            throw new SystemException("文件中心不可用：未配置数据库（无 FileUploadSessionMapper）");
+        }
+        return mapper;
+    }
+
+    private FileChunkMapper chunks() {
+        FileChunkMapper mapper = chunks.getIfAvailable();
+        if (mapper == null) {
+            throw new SystemException("文件中心不可用：未配置数据库（无 FileChunkMapper）");
         }
         return mapper;
     }

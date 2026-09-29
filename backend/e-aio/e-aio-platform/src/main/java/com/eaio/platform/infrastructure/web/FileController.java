@@ -5,10 +5,13 @@ import java.io.InputStream;
 
 import com.eaio.common.api.PageResult;
 import com.eaio.platform.api.dto.FileBindCmd;
+import com.eaio.platform.api.dto.FileChunkCmd;
+import com.eaio.platform.api.dto.FileChunkResult;
 import com.eaio.platform.api.dto.FileDTO;
 import com.eaio.platform.api.dto.FileDelCmd;
 import com.eaio.platform.api.dto.FileDownloadCmd;
 import com.eaio.platform.api.dto.FileIdCmd;
+import com.eaio.platform.api.dto.FileMergeCmd;
 import com.eaio.platform.api.dto.FileQuery;
 import com.eaio.platform.api.dto.FileUploadCmd;
 import com.eaio.platform.api.dto.FileUrlCmd;
@@ -80,6 +83,37 @@ public class FileController {
                     file.getSize(), in, bizType, bizId);
             return service.upload(cmd);
         }
+    }
+
+    /** 分片上传：首片携带会话元数据，文件字段同时接受 file/chunk 以兼容两种客户端命名。 */
+    @PostMapping("/platform/file/UploadChunk")
+    @PreAuthorize("hasAuthority('platform:file:upload')")
+    public FileChunkResult uploadChunk(
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "chunk", required = false) MultipartFile chunk,
+            @RequestParam("uploadId") String uploadId,
+            @RequestParam("chunkIndex") int chunkIndex,
+            @RequestParam(value = "chunkTotal", required = false) Integer chunkTotal,
+            @RequestParam(value = "chunkSize", required = false) Integer chunkSize,
+            @RequestParam("chunkSha256") String chunkSha256,
+            @RequestParam(value = "fileName", required = false) String fileName,
+            @RequestParam(value = "expectedSize", required = false) Long expectedSize,
+            @RequestParam(value = "fileSha256", required = false) String fileSha256) throws IOException {
+        MultipartFile part = file != null ? file : chunk;
+        if (part == null) {
+            throw new IllegalArgumentException("缺少分片文件");
+        }
+        try (InputStream in = part.getInputStream()) {
+            return service.uploadChunk(new FileChunkCmd(uploadId, chunkIndex, chunkTotal, chunkSize,
+                    chunkSha256, fileName, expectedSize, fileSha256, in));
+        }
+    }
+
+    /** 合并分片；重复调用由服务层按会话 fileId 幂等返回。 */
+    @PostMapping("/platform/file/MergeChunks")
+    @PreAuthorize("hasAuthority('platform:file:upload')")
+    public FileDTO mergeChunks(@Valid @RequestBody FileMergeCmd cmd) {
+        return service.mergeChunks(cmd);
     }
 
     // ---------------------------------------------------------------- 读

@@ -283,6 +283,7 @@ import {
   normalizeBindCmd,
   triggerBrowserDownload,
   upload,
+  uploadLarge,
 } from '@/api/platform/file'
 
 /**
@@ -392,7 +393,9 @@ function selectRow(row) {
 async function handleUpload(options) {
   uploading.value = true
   try {
-    const result = await upload(options.file)
+    const result = options.file.size > 5 * 1024 * 1024
+      ? await uploadLarge(options.file, { onProgress: (value) => { options.onProgress?.({ percent: value }) } })
+      : await upload(options.file)
     options.onSuccess?.(result, options)
     const { data } = result
     ElMessage.success(`已上传：${data?.originalName ?? options.file?.name ?? ''}`)

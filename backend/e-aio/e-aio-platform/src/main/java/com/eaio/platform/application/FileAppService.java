@@ -1,6 +1,9 @@
 package com.eaio.platform.application;
 
 import java.io.InputStream;
+import java.io.SequenceInputStream;
+import java.io.IOException;
+import java.util.Collections;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -21,9 +24,12 @@ import com.eaio.common.id.IdGenerator;
 import com.eaio.platform.api.PlatformErrorCode;
 import com.eaio.platform.api.dto.AuditRecord;
 import com.eaio.platform.api.dto.FileBindCmd;
+import com.eaio.platform.api.dto.FileChunkCmd;
+import com.eaio.platform.api.dto.FileChunkResult;
 import com.eaio.platform.api.dto.FileDTO;
 import com.eaio.platform.api.dto.FileDelCmd;
 import com.eaio.platform.api.dto.FileDownloadCmd;
+import com.eaio.platform.api.dto.FileMergeCmd;
 import com.eaio.platform.api.dto.FileQuery;
 import com.eaio.platform.api.dto.FileUploadCmd;
 import com.eaio.platform.api.dto.FileUrlDTO;
@@ -34,9 +40,12 @@ import com.eaio.platform.application.file.FileAccessGuard;
 import com.eaio.platform.application.file.FileDownloadResource;
 import com.eaio.platform.application.file.FileDtoMapper;
 import com.eaio.platform.application.file.FileParams;
+import com.eaio.platform.application.file.FileStorageErrorRecorder;
 import com.eaio.platform.application.file.SizeLimitedInputStream;
 import com.eaio.platform.domain.file.FileBinding;
 import com.eaio.platform.domain.file.FileMetaFile;
+import com.eaio.platform.domain.file.FileChunk;
+import com.eaio.platform.domain.file.FileUploadSession;
 import com.eaio.platform.domain.file.FileNames;
 import com.eaio.platform.domain.file.FileTypePolicy;
 import com.eaio.platform.events.FileDeletedEvent;
@@ -50,6 +59,7 @@ import com.eaio.platform.infrastructure.storage.StoredFileMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -79,8 +89,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FileAppService {
 
-    /** 来源（DDL 的 CHECK；本票只产生 {@code UPLOAD}，其余留给导入导出与模板）。 */
+    /** 来源（DDL 的 CHECK；普通上传、Excel 结果与错误文件分别使用对应值）。 */
     public static final String SOURCE_UPLOAD = "UPLOAD";
+    static final String SOURCE_EXPORT = "EXPORT";
+    static final String SOURCE_IMPORT_ERROR = "IMPORT_ERROR";
 
     /** 留痕动作词（平台内动作，audit 侧若要映射自己的字典由适配器负责）。 */
     private static final String ACTION_UPLOAD = "UPLOAD";
@@ -99,6 +111,7 @@ public class FileAppService {
 
     /** 流式拷贝的缓冲区（8KB：与 JDK 的 Files.copy 同量级，够大又不会让内存驻留明显）。 */
     private static final int COPY_BUFFER_SIZE = 8 * 1024;
+    private static final int MAX_CHUNK_TOTAL = 10_000;
 
     private static final Logger log = LoggerFactory.getLogger(FileAppService.class);
 
@@ -113,12 +126,25 @@ public class FileAppService {
     private final IdGenerator idGenerator;
     private final LocalFileStorage localFileStorage;
     private final FileDtoMapper dtoMapper;
+    private final FileParams fileParams;
+    private final FileStorageErrorRecorder storageErrors;
 
+    /** 兼容无 Spring 的文件服务单测；生产装配走带 FileParams 的构造器。 */
     public FileAppService(FileStore store, List<FileStorage> storages,
             FileStorageConfig.EaioFileProperties storageProperties, FileTypePolicy typePolicy,
             FileAccessGuard accessGuard, ObjectProvider<AuditPort> auditPort, AuditFallbackRecorder auditRecorder,
             PlatformEventPublisher publisher, IdGenerator idGenerator, LocalFileStorage localFileStorage,
             FileDtoMapper dtoMapper) {
+        this(store, storages, storageProperties, typePolicy, accessGuard, auditPort, auditRecorder, publisher,
+                idGenerator, localFileStorage, dtoMapper, null, null);
+    }
+
+    @Autowired
+    public FileAppService(FileStore store, List<FileStorage> storages,
+            FileStorageConfig.EaioFileProperties storageProperties, FileTypePolicy typePolicy,
+            FileAccessGuard accessGuard, ObjectProvider<AuditPort> auditPort, AuditFallbackRecorder auditRecorder,
+            PlatformEventPublisher publisher, IdGenerator idGenerator, LocalFileStorage localFileStorage,
+            FileDtoMapper dtoMapper, FileParams fileParams, FileStorageErrorRecorder storageErrors) {
         this.store = store;
         this.storages = storages.stream().collect(Collectors.toMap(FileStorage::type, storage -> storage));
         this.defaultStorageType = storageProperties.storageTypeOrDefault();
@@ -130,6 +156,8 @@ public class FileAppService {
         this.idGenerator = idGenerator;
         this.localFileStorage = localFileStorage;
         this.dtoMapper = dtoMapper;
+        this.fileParams = fileParams;
+        this.storageErrors = storageErrors == null ? new FileStorageErrorRecorder() : storageErrors;
         // 新写文件的适配器在构造期就确定：类型没登记（例如配成 S3 而适配器未实现）必须启动即失败，
         // 而不是等第一次上传才 20015（"不允许静默假成功"）
         requireStorage(defaultStorageType);
@@ -152,6 +180,15 @@ public class FileAppService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public FileDTO upload(FileUploadCmd cmd) {
+        return upload(cmd, SOURCE_UPLOAD);
+    }
+
+    /** 文件中心内部生成文件的上传入口；不扩大冻结的 {@code FileApi} 契约。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public FileDTO upload(FileUploadCmd cmd, String source) {
+        if (source == null || !Set.of(SOURCE_UPLOAD, SOURCE_EXPORT, SOURCE_IMPORT_ERROR).contains(source)) {
+            throw new IllegalArgumentException("非法文件来源：" + source);
+        }
         String extension = typePolicy.validateUpload(cmd);
         long fileId = idGenerator.nextId();
         Instant now = Instant.now();
@@ -196,7 +233,7 @@ public class FileAppService {
         row.setStoragePath(storagePath);
         row.setUploaderId(operatorId);
         row.setUploaderOrgId(orgId);
-        row.setSource(SOURCE_UPLOAD);
+        row.setSource(source);
         row.setCreatedAt(now);
         row.setCreatedBy(operatorId);
         row.setVersion(0);
@@ -220,6 +257,298 @@ public class FileAppService {
         log.info("文件上传成功：fileId={} name={} size={} sha256={} storageType={}",
                 fileId, row.getOriginalName(), sizeBytes, sha256, row.getStorageType());
         return toDto(row, null);
+    }
+
+    /** 上传一个分片；会话由首片创建，重复片用数据库唯一键 UPSERT。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public FileChunkResult uploadChunk(FileChunkCmd cmd) {
+        validateUploadId(cmd.uploadId());
+        if (cmd.content() == null || cmd.chunkSha256() == null) {
+            throw chunkInvalid("分片内容与 chunkSha256 必填");
+        }
+        Instant now = Instant.now();
+        FileUploadSession session = store.sessionByUploadId(cmd.uploadId());
+        if (session == null) {
+            session = createSession(cmd, now);
+        } else {
+            requireSessionOwner(session);
+            ensureSessionOpen(session, now);
+            validateSessionShape(session, cmd);
+        }
+        if (cmd.chunkIndex() < 0 || cmd.chunkIndex() >= session.getChunkTotal()) {
+            throw chunkInvalid("chunkIndex 超出范围：" + cmd.chunkIndex());
+        }
+        String expectedChunkHash = normalizeSha256(cmd.chunkSha256(), "chunkSha256");
+        String path;
+        try {
+            path = localFileStorage.storeChunk(
+                    new SizeLimitedInputStream(cmd.content(), session.getChunkSize()),
+                    session.getUploadId(), cmd.chunkIndex());
+        } catch (BusinessException e) {
+            if (e.getCode() == PlatformErrorCode.FILE_TOO_LARGE.getCode()) {
+                throw chunkInvalid("分片大小超过上限：" + session.getChunkSize());
+            }
+            throw e;
+        }
+        long actualSize;
+        String actualHash;
+        try (InputStream in = localFileStorage.openChunk(session.getUploadId(), cmd.chunkIndex())) {
+            DigestAndSize digest = digestAndSize(in);
+            actualSize = digest.size();
+            actualHash = digest.sha256();
+        } catch (IOException e) {
+            localFileStorage.deleteChunk(session.getUploadId(), cmd.chunkIndex());
+            throw storageError(new BusinessException(PlatformErrorCode.FILE_STORAGE_ERROR.getCode(), "分片读取失败", e));
+        }
+        if (actualSize == 0 || actualSize > session.getChunkSize()
+                || (cmd.chunkIndex() < session.getChunkTotal() - 1 && actualSize != session.getChunkSize())
+                || !expectedChunkHash.equals(actualHash)) {
+            localFileStorage.deleteChunk(session.getUploadId(), cmd.chunkIndex());
+            throw chunkInvalid("分片大小或摘要不匹配：chunkIndex=" + cmd.chunkIndex());
+        }
+        FileChunk chunk = new FileChunk();
+        chunk.setId(idGenerator.nextId());
+        chunk.setSessionId(session.getId());
+        chunk.setChunkIndex(cmd.chunkIndex());
+        chunk.setChunkSize((int) actualSize);
+        chunk.setSha256(actualHash);
+        chunk.setStoragePath(path);
+        chunk.setCreatedAt(now);
+        chunk.setCreatedBy(accessGuard.currentOperatorId());
+        store.upsertChunk(chunk);
+        return new FileChunkResult(session.getUploadId(), store.countChunks(session.getId()), session.getChunkTotal());
+    }
+
+    /** 按序拼接分片并创建普通 file 行；DONE 会话直接返回既有文件。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public FileDTO mergeChunks(FileMergeCmd cmd) {
+        validateUploadId(cmd.uploadId());
+        Instant now = Instant.now();
+        FileUploadSession session = store.sessionByUploadId(cmd.uploadId());
+        if (session == null) {
+            throw sessionMissing(cmd.uploadId());
+        }
+        requireSessionOwner(session);
+        if ("DONE".equals(session.getStatus())) {
+            return toDto(requireRow(session.getFileId()), null);
+        }
+        ensureSessionOpen(session, now);
+        if (store.claimMerge(session, now) == 0) {
+            FileUploadSession current = store.sessionByUploadId(cmd.uploadId());
+            if (current != null && "DONE".equals(current.getStatus())) {
+                return toDto(requireRow(current.getFileId()), null);
+            }
+            throw sessionMissing(cmd.uploadId());
+        }
+        List<FileChunk> chunks = store.chunksFor(session.getId());
+        List<Integer> missing = missingIndexes(session, chunks);
+        if (!missing.isEmpty()) {
+            store.reopenMerge(session, now);
+            throw chunkInvalid("缺少分片：" + missing);
+        }
+        long total = chunks.stream().mapToLong(chunk -> chunk.getChunkSize()).sum();
+        if (total != session.getExpectedSize()) {
+            store.reopenMerge(session, now);
+            throw chunkInvalid("分片总大小不匹配：" + total + " != " + session.getExpectedSize());
+        }
+        long fileId = idGenerator.nextId();
+        String extension = session.getExtension() == null ? "" : session.getExtension();
+        String storagePath = null;
+        try {
+            List<InputStream> streams = new java.util.ArrayList<>(chunks.size());
+            for (FileChunk chunk : chunks) {
+                streams.add(localFileStorage.openChunk(session.getUploadId(), chunk.getChunkIndex()));
+            }
+            try (SequenceInputStream in = new SequenceInputStream(Collections.enumeration(streams))) {
+                storagePath = storage().store(new SizeLimitedInputStream(in, session.getExpectedSize()),
+                        new StoredFileMeta(fileId, extension, null, now));
+            }
+            DigestAndSize digest = digestOfWithSize(storagePath);
+            if (digest.size() != session.getExpectedSize()
+                    || (session.getSha256() != null && !session.getSha256().equalsIgnoreCase(digest.sha256()))) {
+                store.reopenMerge(session, now);
+                throw chunkInvalid("合并文件摘要或大小不匹配");
+            }
+            Long operatorId = session.getCreatedBy();
+            FileMetaFile row = new FileMetaFile();
+            row.setId(fileId);
+            row.setOriginalName(session.getFileName());
+            row.setExtension(extension.isEmpty() ? null : extension);
+            row.setSizeBytes(digest.size());
+            row.setSha256(digest.sha256());
+            row.setStorageType(storage().type());
+            row.setStoragePath(storagePath);
+            row.setUploaderId(operatorId);
+            row.setUploaderOrgId(orgIdOrZero());
+            row.setSource("CHUNK");
+            row.setCreatedAt(now);
+            row.setCreatedBy(operatorId);
+            row.setVersion(0);
+            row.setDeleted(false);
+            store.insert(row);
+            if (cmd.bizType() != null && !cmd.bizType().isBlank() && cmd.bizId() != null) {
+                bindInternal(fileId, cmd.bizType(), cmd.bizId(), operatorId);
+            }
+            publisher.publish(new FileUploadedEvent(idGenerator.nextStr(), Instant.now(), fileId, cmd.bizType(),
+                    cmd.bizId(), digest.size(), digest.sha256(), operatorId, row.getUploaderOrgId()));
+            if (store.markSessionDone(session, fileId, now) == 0) {
+                throw new BusinessException(ErrorCode.DATA_CONFLICT,
+                        "分片会话状态已变化，合并结果未提交：uploadId=" + cmd.uploadId());
+            }
+            for (FileChunk chunk : chunks) {
+                localFileStorage.deleteChunk(session.getUploadId(), chunk.getChunkIndex());
+            }
+            store.deleteChunks(session.getId());
+            recordAudit(new AuditRecord(ACTION_UPLOAD, RESOURCE_FILE, fileId, cmd.bizType(), cmd.bizId(),
+                    operatorId, row.getUploaderOrgId(), RESULT_SUCCESS, digest.size(), digest.sha256(),
+                    MDC.get("traceId")));
+            return toDto(row, null);
+        } catch (IOException e) {
+            store.reopenMerge(session, now);
+            BusinessException failure = storageError(new BusinessException(PlatformErrorCode.FILE_STORAGE_ERROR.getCode(),
+                    "合并分片时读取文件失败", e));
+            if (storagePath != null) {
+                deleteQuietly(storagePath, failure);
+            }
+            throw failure;
+        } catch (BusinessException e) {
+            store.reopenMerge(session, now);
+            if (storagePath != null) {
+                deleteQuietly(storagePath, e);
+            }
+            if (e.getCode() == PlatformErrorCode.FILE_TOO_LARGE.getCode()) {
+                throw chunkInvalid("合并文件超过会话大小：" + session.getExpectedSize());
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            store.reopenMerge(session, now);
+            if (storagePath != null) {
+                deleteQuietly(storagePath, e);
+            }
+            throw e;
+        }
+    }
+
+    private FileUploadSession createSession(FileChunkCmd cmd, Instant now) {
+        if (cmd.fileName() == null || cmd.expectedSize() == null
+                || cmd.chunkTotal() == null || cmd.chunkSize() == null) {
+            throw chunkInvalid("首片必须携带 fileName、expectedSize、chunkTotal、chunkSize");
+        }
+        long expected = cmd.expectedSize();
+        int total = cmd.chunkTotal();
+        int size = cmd.chunkSize();
+        long requiredTotal = expected > 0 && size > 0 ? (expected - 1) / size + 1 : 0;
+        if (expected <= 0 || total <= 0 || total > MAX_CHUNK_TOTAL || size <= 0
+                || total != requiredTotal) {
+            throw chunkInvalid("会话分片参数不合法");
+        }
+        String extension = typePolicy.validateUpload(new FileUploadCmd(cmd.fileName(), null,
+                FileUploadCmd.SIZE_UNKNOWN,
+                InputStream.nullInputStream(), null, null));
+        FileUploadSession session = new FileUploadSession();
+        session.setId(idGenerator.nextId());
+        session.setUploadId(cmd.uploadId());
+        session.setFileName(FileNames.normalizedOriginalName(cmd.fileName()));
+        session.setExtension(extension.isEmpty() ? null : extension);
+        session.setExpectedSize(expected);
+        session.setChunkSize(size);
+        session.setChunkTotal(total);
+        session.setSha256(cmd.fileSha256() == null ? null : normalizeSha256(cmd.fileSha256(), "fileSha256"));
+        session.setStorageType(storage().type());
+        session.setStatus("OPEN");
+        session.setExpireTime(now.plus(java.time.Duration.ofHours(fileParams == null ? 24 : fileParams.sessionTtlHours())));
+        session.setCreatedAt(now);
+        session.setCreatedBy(accessGuard.currentOperatorId());
+        session.setVersion(0);
+        store.insertSession(session);
+        return session;
+    }
+
+    private void validateSessionShape(FileUploadSession session, FileChunkCmd cmd) {
+        if (cmd.chunkTotal() != null && !cmd.chunkTotal().equals(session.getChunkTotal())
+                || cmd.chunkSize() != null && !cmd.chunkSize().equals(session.getChunkSize())) {
+            throw chunkInvalid("分片参数与会话不一致");
+        }
+    }
+
+    private void ensureSessionOpen(FileUploadSession session, Instant now) {
+        if (!"OPEN".equals(session.getStatus())
+                || session.getExpireTime() == null || !now.isBefore(session.getExpireTime())) {
+            if (!"DONE".equals(session.getStatus())) {
+                store.expireSession(session, now);
+            }
+            throw sessionMissing(session.getUploadId());
+        }
+    }
+
+    private void requireSessionOwner(FileUploadSession session) {
+        Long owner = session.getCreatedBy();
+        Long current = accessGuard.currentOperatorId();
+        if (owner == null || current == null || !owner.equals(current)) {
+            throw sessionMissing(session.getUploadId());
+        }
+    }
+
+    private static List<Integer> missingIndexes(FileUploadSession session, List<FileChunk> chunks) {
+        Set<Integer> found = chunks.stream().map(FileChunk::getChunkIndex).collect(Collectors.toSet());
+        List<Integer> missing = new ArrayList<>();
+        for (int i = 0; i < session.getChunkTotal(); i++) {
+            if (!found.contains(i)) {
+                missing.add(i);
+            }
+        }
+        return missing;
+    }
+
+    private static void validateUploadId(String uploadId) {
+        if (uploadId == null || !uploadId.matches("[A-Za-z0-9-]{1,64}")) {
+            throw chunkInvalid("uploadId 非法");
+        }
+    }
+
+    private static String normalizeSha256(String value, String field) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[0-9a-f]{64}")) {
+            throw chunkInvalid(field + " 必须是 64 位 SHA-256");
+        }
+        return normalized;
+    }
+
+    private static BusinessException chunkInvalid(String message) {
+        return new BusinessException(PlatformErrorCode.FILE_CHUNK_INVALID, message);
+    }
+
+    private static BusinessException sessionMissing(String uploadId) {
+        return new BusinessException(PlatformErrorCode.FILE_SESSION_NOT_FOUND,
+                "分片上传会话不存在或已过期：" + uploadId);
+    }
+
+    private DigestAndSize digestOfWithSize(String storagePath) {
+        try (InputStream in = storage().open(storagePath)) {
+            return digestAndSize(in);
+        } catch (IOException e) {
+            throw storageError(new BusinessException(PlatformErrorCode.FILE_STORAGE_ERROR.getCode(),
+                    "文件存储读写失败：" + storagePath, e));
+        }
+    }
+
+    private static DigestAndSize digestAndSize(InputStream in) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            long size = 0L;
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                size += read;
+                digest.update(buffer, 0, read);
+            }
+            return new DigestAndSize(size, HexFormat.of().formatHex(digest.digest()));
+        } catch (NoSuchAlgorithmException e) {
+            throw new SystemException("SHA-256 不可用", e);
+        }
+    }
+
+    private record DigestAndSize(long size, String sha256) {
     }
 
     // ---------------------------------------------------------------- 读
@@ -515,13 +844,19 @@ public class FileAppService {
 
     /** 清理刚落盘的文件；清理失败要留 ERROR（它意味着孤儿文件留在盘上）。 */
     /** 存储适配器的运行期故障统一落到文件错误码；业务错误（如签名不可用）原样透出。 */
-    private static RuntimeException storageFailure(String storagePath, RuntimeException cause) {
+    private RuntimeException storageFailure(String storagePath, RuntimeException cause) {
         if (cause instanceof BusinessException) {
-            return cause;
+            return ((BusinessException) cause).getCode() == PlatformErrorCode.FILE_STORAGE_ERROR.getCode()
+                    ? storageError(cause) : cause;
         }
         String suffix = storagePath == null ? "" : "：" + storagePath;
-        return new BusinessException(PlatformErrorCode.FILE_STORAGE_ERROR.getCode(), "文件存储读写失败" + suffix,
-                cause);
+        return storageError(new BusinessException(PlatformErrorCode.FILE_STORAGE_ERROR.getCode(),
+                "文件存储读写失败" + suffix, cause));
+    }
+
+    private <T extends RuntimeException> T storageError(T error) {
+        storageErrors.record();
+        return error;
     }
 
     private void deleteQuietly(String storagePath, RuntimeException cause) {

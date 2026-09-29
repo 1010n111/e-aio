@@ -52,8 +52,8 @@ public class DictApiImpl implements DictApi {
     }
 
     @Override
-    public void del(long id, int version) {
-        service.delType(id, version);
+    public void del(long id) {
+        service.delType(id);
     }
 
     @Override
@@ -72,7 +72,7 @@ public class DictApiImpl implements DictApi {
     }
 
     @Override
-    public void delItem(long id, int version) {
-        service.delItem(id, version);
+    public void delItem(long id) {
+        service.delItem(id);
     }
 }

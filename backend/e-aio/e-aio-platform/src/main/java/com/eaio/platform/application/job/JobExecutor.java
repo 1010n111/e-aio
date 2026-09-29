@@ -269,8 +269,18 @@ public class JobExecutor {
                 attempt, message);
         // T8 起走发件箱：与本次写终态同事务登记 event_delivery（本方法没有事务，publish 自己开一个短事务），
         // 提交后由 PlatformEventDispatcher 同步投递；投递失败按退避重投、超限进死信（3.9.2）
-        publisher.publish(new JobFailedEvent(idGenerator.nextStr(), now, job.getJobCode(), runId, attempt, message,
-                traceId));
+        int failCount = consecutiveFailures(job.getJobCode());
+        publisher.publish(new JobFailedEvent(idGenerator.nextStr(), now, job.getJobCode(), runId, attempt, failCount,
+                message, traceId));
+    }
+
+    private int consecutiveFailures(String jobCode) {
+        try {
+            return Math.max(1, Math.toIntExact(runs.consecutiveFailures(jobCode)));
+        } catch (RuntimeException e) {
+            log.warn("任务连续失败次数读取失败，按当前失败计数：jobCode={}，原因={}", jobCode, e.toString());
+            return 1;
+        }
     }
 
     /** 本次参数：显式传入优先，否则取任务上保存的参数（永不为 {@code null}）。 */

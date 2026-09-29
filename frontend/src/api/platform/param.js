@@ -1,5 +1,14 @@
 import { DATA_CONFLICT, FORBIDDEN_CODE, IDEMPOTENCY_KEY_MISSING } from '@/api/codes'
 import { action, query } from '@/api/request'
+
+export const PARAM_PERMISSIONS = Object.freeze({
+  list: 'platform:param:list',
+  get: 'platform:param:get',
+  add: 'platform:param:add',
+  up: 'platform:param:up',
+  del: 'platform:param:del',
+  refresh: 'platform:param:refresh',
+})
 import {
   PARAM_BUILTIN_READONLY,
   PARAM_DUPLICATED,

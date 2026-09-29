@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -125,6 +126,57 @@ public class LocalFileStorage implements FileStorage {
             // 穿越路径不算"存在"：exists 是诊断口，不该把异常抛给清理任务
             log.warn("忽略越界的存储路径（疑似篡改）：storagePath={}", storagePath);
             return false;
+        }
+    }
+
+    /** 写分片：临时文件完成后原子替换，重传同片不会留下半片。 */
+    public String storeChunk(InputStream in, String uploadId, int chunkIndex) {
+        Path target = resolveChunk(uploadId, chunkIndex);
+        Path temp = target.resolveSibling(target.getFileName() + ".tmp-" + java.util.UUID.randomUUID());
+        createDirectories(target.getParent());
+        try {
+            Files.copy(in, temp);
+            try {
+                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return root().relativize(target).toString().replace('\\', '/');
+        } catch (IOException e) {
+            deleteQuietly(temp);
+            throw new SystemException("分片落盘失败：" + uploadId + "/" + chunkIndex, e);
+        } catch (RuntimeException e) {
+            deleteQuietly(temp);
+            throw e;
+        }
+    }
+
+    public InputStream openChunk(String uploadId, int chunkIndex) {
+        try {
+            return Files.newInputStream(resolveChunk(uploadId, chunkIndex));
+        } catch (IOException e) {
+            throw new SystemException("分片读取失败：" + uploadId + "/" + chunkIndex, e);
+        }
+    }
+
+    public void deleteChunk(String uploadId, int chunkIndex) {
+        deleteQuietly(resolveChunk(uploadId, chunkIndex));
+    }
+
+    public void deleteChunkDirectory(String uploadId) {
+        Path dir = resolveChunkDirectory(uploadId);
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try (var paths = Files.list(dir)) {
+            paths.forEach(this::deleteQuietly);
+        } catch (IOException e) {
+            throw new SystemException("删除分片目录失败：" + uploadId, e);
+        }
+        try {
+            Files.deleteIfExists(dir);
+        } catch (IOException e) {
+            throw new SystemException("删除分片目录失败：" + uploadId, e);
         }
     }
 
@@ -252,6 +304,21 @@ public class LocalFileStorage implements FileStorage {
         } catch (IOException e) {
             throw new SystemException("创建存储目录失败：" + dir, e);
         }
+    }
+
+    private Path resolveChunk(String uploadId, int chunkIndex) {
+        if (uploadId == null || !uploadId.matches("[A-Za-z0-9-]{1,64}") || chunkIndex < 0) {
+            throw new SystemException("非法分片路径");
+        }
+        return resolveInsideRoot("chunks/" + uploadId + "/"
+                + String.format(Locale.ROOT, "%06d.part", chunkIndex));
+    }
+
+    private Path resolveChunkDirectory(String uploadId) {
+        if (uploadId == null || !uploadId.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new SystemException("非法分片路径");
+        }
+        return resolveInsideRoot("chunks/" + uploadId);
     }
 
     private void deleteQuietly(Path path) {

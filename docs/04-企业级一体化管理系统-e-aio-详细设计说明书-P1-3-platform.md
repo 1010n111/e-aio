@@ -717,9 +717,20 @@ sequenceDiagram
 | 9 | 3.3.3 上传路径的"落盘 → INSERT" | 除了校验失败要清临时文件外，**`INSERT`/事件登记失败（事务将回滚）也要清掉刚落下的文件**；清理失败的清理动作只记 ERROR | 孤儿清理任务是按 `file` 表的行做工的：**库里没有行 = 没有任何路径能清掉这个文件**（永久磁盘泄漏）。反向的"行在但盘上悬空"才由 `platform.file.orphan.clean` 兜底。事务**提交阶段**才失败的情况仍会留下文件——那无法用应用代码兜住，不为它加补偿逻辑 |
 | 10 | 3.4.5 的 6 个内置任务；4.5 种子 ID 51–56 | 本票只注册 **ID 53 `platform.file.orphan.clean`** 的处理点（两段式：未绑定且超 `orphan-retain-days` → 软删；软删超 `purge-days` → 盘→绑定→库）；**不新增 job 行**。ID 52 `platform.file.session.expire` 的处理点随 **#22** 落地——在此之前启动期会有一条 T7 的显式跳过 ERROR（"任务处理点未注册，已跳过调度"），那是让缺口可见、不是故障，且**不影响本票验收第 5 条**（孤儿 + 软删清理由 ID 53 一个任务承担两段） | 任务注册表（`JobHandlerRegistry`）按 Bean 收集可执行点，"先种行、处理点随能力的票注册"是 T7 定下的先例；分片会话表在 #22 之前没有写入方，先写清理逻辑等于给空表写代码 |
 | 11 | 4.3.6/4.3.7 的两张分片表 | V4 一次建好三张分片相关表（`file_upload_session`/`file_chunk` + `file`/`file_binding`），并按第 8 条补 `deleted`；另建 `idx_file_upload_session_status_created(status, created_at)` 供会话保留期清理走索引 | 迁移脚本一旦发布不可修改（checksum），先建表比让 #22 再补一个 V 脚本便宜。额外索引是**加法**，脚本头已登记 |
-| 12 | 6.2 的 `FileRoundTripIT` | 落地 5 个用例：上传→下载→删除（字节/sha256/响应头/软删标记/删除后 20014）、预签名（有效 / 篡改 / 换 fileId / 过期 / 裸链接，各 20016）、可见性（本人可下、异组织他人 20017 + 留痕、GetMeta 同样 20017）、校验与幂等（20012 / 读不需要幂等键 / 写缺键 10001 / Del 版本过期 10003）、绑定与分页（重复绑定只 1 行、按 bizType+bizId 过滤、列表不含物理路径） | 6.2 的单行口径拆成 5 条用例是为了让失败信息能直接指认违反的是哪一条。**IT 必须自己钉住身份**：`OrgContextPort` 替身是静态的、多个 IT 类共享同一 JVM，上一个测试类留下的"当前用户/组织"会带进来（实测：不钉住时文件以别的组织身份上传，下载判定随上下文漂移而红），因此每个用例开头显式设置组织/用户 |
+| 12 | 6.2 的 `FileRoundTripIT` | 落地 5 个用例：上传→下载→删除（字节/sha256/响应头/软删标记/删除后 20014）、预签名（有效 / 篡改 / 换 fileId / 过期 / 裸链接，各 20016）、可见性（本人可下、异组织他人 20017 + 留痕、GetMeta 同样 20017）、校验与幂等（20012 / 读不需要幂等键 / 写缺键 10001 / Del 版本过期 10003）、绑定与分页（重复绑定只 1 行、按 bizType+bizId 过滤、列表不含物理路径）；`FileRoundTripIT` 5/5 通过 | 6.2 的单行口径拆成 5 条用例是为了让失败信息能直接指认违反的是哪一条。**IT 必须自己钉住身份**：`OrgContextPort` 替身是静态的、多个 IT 类共享同一 JVM，上一个测试类留下的"当前用户/组织"会带进来（实测：不钉住时文件以别的组织身份上传，下载判定随上下文漂移而红），因此每个用例开头显式设置组织/用户 |
 | 13 | 7.2 的三个 `platform.file.*` 保留期键（`session-retain-days`/`orphan-retain-days`/`purge-days`） | 代码按 7.2 的键名与默认值读取（`FileParams`），**种子里没有这三行**（T4 只种了 6 个 `platform.file.*` 键），读不到即用默认值（7/7/30），种子里补上即生效、不需要改代码 | 补种子属 T4 范围且"参数 ID 区间"是既有先例（1–10 / 21–45 / 51–56 / 61–63），本票**不新增参数行**（7.2 是唯一来源，但落地与否要看种子）。登记为**待办**：谁补种子谁把 `hot_reload`/`param_group`（`file`）按 7.2 与既有先例填上 |
 | 14 | 本票**未做**（登记承接方） | ① `S3FileStorage` 与 `s3` profile（#22 之后或独立票）；② 分片上传/合并全会话（#22）；③ ID 52 会话过期任务的处理点（#22）；④ `FileApi.download` 的 `inline` 参数在 HTTP 面恒为附件（响应用 `attachment`）——本册 3.3.4 的响应头就是 `attachment`；⑤ `platform.file.storage.error` 指标（归 monitor 票，`MonitorApi` 未交付）；⑥ 秒传/物理去重（3.3.7 明确不做） | 逐条都有票面归属；写清"谁接"比留一句"TODO"有用 |
+
+**实现注记（T10 已落地，2026-09-29）**——分片票接续 T9 的表结构与契约冻结：
+
+| # | 本册口径 | 落地实现 | 理由 |
+|---|---|---|---|
+| 1 | 会话、分片、乱序上传与同片重传 | `FileAppService.uploadChunk` 创建/校验会话，分片落本地盘并由 `(session_id, chunk_index)` UPSERT；`mergeChunks` 按序拼接并重算整文件摘要 | 复用 V4 已发布表与 `LocalFileStorage`，不新增二进制存储抽象 |
+| 2 | 合并幂等、缺片与过期语义 | `DONE` 会话直接返回原 `fileId`；缺片/摘要不匹配返回 20013 并重开会话；过期会话返回 20018；`FileSessionExpireHandler` 承接种子 ID 52 | 服务端承担网络重试，避免重复建 `file` 行 |
+| 3 | 合并完成后清理元数据 | 只有 `markSessionDone` 受影响行数为 1 才删除分片文件与行；状态更新失败会回滚并清理合并文件 | 防止留下 `MERGING` 会话却删除可恢复分片 |
+| 4 | 前端失败续传 | `frontend/src/api/platform/file.js` 的 `uploadLarge` 以 `localStorage` 保存 uploadId/分片摘要，失败后复用已上传分片 | 浏览器刷新与网络中断均可继续，不把进度放入服务端会话之外 |
+
+`ChunkUploadIT` 3/3 通过，覆盖乱序/重复分片、缺片、超大分片与合并幂等。
 
 ### 3.4 定时任务（Spring Task + ShedLock：注册 / 启停 / 日志 / 重试 / 告警）
 
@@ -974,6 +985,8 @@ sequenceDiagram
 | `ExcelTaskAppService` | 队列满 | 20036，且 `excel_task` 无新行 |
 | `ExcelTaskAppService` | `getTask` 在另一个实例上下文 | 能读到 DB 中的进度（跨实例可查） |
 
+**实现注记（T11 已落地，2026-09-29）**——`ExcelTaskAppService`、`ExcelKit` 与任务页已落地异步受理、错误明细、去重、取消、分批事务、结果文件下载与队列拒绝；运行中状态由受影响行数确认，进度按已读行数刷新，取消竞态不会重新启动任务。当前代码使用 1000 行批处理常量（设计表中“每 500 行刷库”是待进一步拆分的刷新频率口径）。`ExcelTaskIT` 2/2 通过；Failsafe 子 JVM 使用 `-DargLine=-Xmx512m` 时，10 万行导出堆峰值采样为 **99.5MB**（≤384MB）。
+
 ### 3.6 缓存管理（两级缓存 / 键规范 / 失效事件 / 穿透击穿雪崩防护）
 
 #### 3.6.1 目标与 `CacheRegion` 命名规范
@@ -1099,6 +1112,8 @@ Actuator + Micrometer → Prometheus（HLD 9.4、NFR-MAINT-04）；应用侧**�
 | `MetricSnapshotReader` | Actuator 端点关闭 | `health()` 返回 `UNKNOWN`，不抛异常 |
 | `MonitorApiImpl` | 无权限调用 `metrics()` | 10403（由 Spring Security 抛，platform 不新增码） |
 
+**实现注记（T13 已落地，2026-09-29）**——`MetricSnapshotReader` 提供 JVM/任务/缓存/事件/降级事实，`AlertAppService` 负责持续时长、Redis pending、抑制窗口、ACK/RESOLVED 和站内公告；`JobFailedEvent`/`EventDeadLetteredEvent` 已接入告警。可评估指标白名单包含任务失败、死信、缓存、audit、文件存储、参数缺失和字典未命中，未知指标保存时返回 20061；三条内置规则与两条通知模板由种子补齐；`AlertIT` 2/2 通过。
+
 ### 3.8 公告与通知模板（消息模板）
 
 #### 3.8.1 目标与组件
@@ -1150,6 +1165,8 @@ flowchart LR
 | `NoticeAppService` | `publishTime` 为未来 | 状态 `DRAFT`；`platform.notice.publish.scan` 到点后置 `PUBLISHED` |
 | `NoticeAppService` | 重复 `markRead` | 只有 1 行 `notice_read`（`ON CONFLICT DO NOTHING`） |
 | `NoticeAppService` | 过期公告（`expire_time < now`） | `getUnread` 不返回 |
+
+**实现注记（T12 已落地，2026-09-29）**——`NoticeAppService` 支持 ALL/ORG/USER 收件范围、未来发布时间草稿、到点扫描、到期过滤、置顶排序和幂等已读；`NotifyTemplateAppService` 在保存时校验声明、渲染时区分 20042/20043。`R__platform_seed.sql` 追加 `platform.job.failed` 与 `platform.alert.raised` 两条 SITE 内置模板；`NoticeIT` 3/3 通过。
 
 ### 3.9 事件总线可靠性（platform 侧：登记 / 重试 / 死信 / 幂等）
 
@@ -2395,6 +2412,8 @@ public interface NotifyTemplateApi {
 | 11 | 错误码落段且无重号 | `mvn -B test -Dtest=ArchitectureTest#moduleErrorCodesWithinSegment` |
 | 12 | 模块边界与 `api` 包可见性 | `mvn -B test -Dtest=ArchitectureTest` |
 | 13 | 全量门禁 | `cd backend/e-aio && mvn -B test`（单测 + ArchUnit + Modulith verify） |
+
+**实现注记（T14 已落地，2026-09-29）**——`ApiContractTest` 反射校验 9 个命名接口，`PermissionCodeContractTest` 覆盖权限码集合与后端注解/前端调用串；`ParamCenterIT` 的广播传播断言 ≤1s。显式性能抽验命令 `mvn -B -pl e-aio-app -am -DskipTests -Dit.test=PlatformPerformanceIT -Deaio.performance=true -Dfailsafe.failIfNoSpecifiedTests=false verify` 记录：百万行灌库 7.9s、缓存命中 P95 **1ms**、常规分页 P95 **113ms**、百万行分页 P95 **328ms**；`ExcelTaskIT` 用 `-DargLine=-Xmx512m` 记录 10 万行堆峰值 **99.5MB**。这些数值均低于 6.4 阈值，Docker 容器测试通过。
 
 ### 6.6 里程碑（M1–M3）
 

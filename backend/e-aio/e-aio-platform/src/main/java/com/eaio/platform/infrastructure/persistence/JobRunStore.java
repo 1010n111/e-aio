@@ -138,6 +138,11 @@ public class JobRunStore {
         return mapper().markStaleRunningAsFailed(staleBefore, message);
     }
 
+    /** 当前任务自最近一次成功以来的终态失败次数。 */
+    public long consecutiveFailures(String jobCode) {
+        return mapper().consecutiveFailures(jobCode);
+    }
+
     /** 分批物理删除早于 {@code before} 的行，返回本批删除行数（3.4.4：调用方循环到不足一批为止）。 */
     public int deleteBatchBefore(Instant before, int batchSize) {
         return mapper().deleteBatchBefore(before, batchSize);

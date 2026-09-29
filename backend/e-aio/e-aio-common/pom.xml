@@ -16,6 +16,12 @@
 
   <!-- 纯净性约束（P0 册 3.7）：本模块不得依赖任何 com.eaio.&lt;module&gt;、不得引用 Web 与持久层类型 -->
   <dependencies>
+    <!-- ExcelKit 的唯一实现依赖；业务模块只看 common 门面，不直接绑定 Fesod。 -->
+    <dependency>
+      <groupId>org.apache.fesod</groupId>
+      <artifactId>fesod-sheet</artifactId>
+      <version>2.0.2-incubating</version>
+    </dependency>
     <!-- JSON 门面的底层实现（JsonUtils）；版本由 Boot BOM 管理，业务模块不直接依赖 Jackson -->
     <dependency>
       <groupId>tools.jackson.core</groupId>

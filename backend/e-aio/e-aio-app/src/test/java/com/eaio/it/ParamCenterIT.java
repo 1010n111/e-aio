@@ -20,7 +20,13 @@ import com.eaio.common.redis.RedisKeys;
 import com.eaio.platform.api.ParamApi;
 import com.eaio.platform.api.dto.ParamSaveCmd;
 import com.eaio.platform.api.port.OrgContextPort;
+import com.eaio.platform.application.param.ParamCryptoKeys;
+import com.eaio.platform.application.param.ParamResolver;
+import com.eaio.platform.domain.param.ParamContext;
+import com.eaio.platform.infrastructure.cache.ParamInvalidationSubscriber;
+import com.eaio.platform.infrastructure.cache.ParamL2Cache;
 import com.eaio.platform.infrastructure.cache.ParamInvalidationPublisher;
+import com.eaio.platform.infrastructure.persistence.ParamStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,6 +84,15 @@ class ParamCenterIT extends IntegrationTestBase {
 
     @Autowired
     private Environment environment;
+
+    @Autowired
+    private ParamStore paramStore;
+
+    @Autowired
+    private ParamL2Cache paramL2Cache;
+
+    @Autowired
+    private ParamCryptoKeys cryptoKeys;
 
     @LocalServerPort
     private int port;
@@ -285,21 +300,43 @@ class ParamCenterIT extends IntegrationTestBase {
 
     @Test
     @DisplayName("跨实例失效广播：另一实例发布失效消息后，本实例立刻读到新值（不等 L1 的 60s TTL）")
-    void crossInstanceInvalidation() throws InterruptedException {
+    void crossInstanceInvalidation() throws Exception {
         String key = "platform.file.session-ttl-hours";
         paramApiSwitchTo(9901L, 0L);
         assertThat(paramApi.getInt(key, -1)).as("预热 L1").isEqualTo(24);
 
-        jdbc().update("update eaio_platform.param set param_value = '8888888' where param_key = ?"
-                + " and param_level = 'SYSTEM'", key);
-        assertThat(paramApi.getInt(key, -1)).as("未广播前 L1 命中：仍读缓存值").isEqualTo(24);
+        // 独立 resolver 代表另一实例：它有自己的 Caffeine L1，但共用真实 Redis L2。
+        ParamResolver secondaryResolver = new ParamResolver(paramStore, paramL2Cache, cryptoKeys, environment);
+        ParamContext secondaryContext = new ParamContext(9901L, 0L);
+        assertThat(secondaryResolver.resolve(key, secondaryContext).orElseThrow().value())
+                .as("另一实例预热 L1").isEqualTo("24");
+        RedisMessageListenerContainer secondarySubscriber = new RedisMessageListenerContainer();
+        secondarySubscriber.setConnectionFactory(Objects.requireNonNull(redisTemplate.getConnectionFactory()));
+        secondarySubscriber.addMessageListener(new ParamInvalidationSubscriber(secondaryResolver, environment),
+                new ChannelTopic(publisher.channel()));
+        secondarySubscriber.afterPropertiesSet();
+        secondarySubscriber.start();
 
-        // 广播的效果必须两层都发生：先证明 L2 里真有这个键（否则"没命中"可能只是没写 L2），
-        // 再断言广播把它删掉了——不然失败时只有"值没变"这一个信息，分不清是 L1 还是 L2 没失效。
-        assertThat(redisTemplate.hasKey(l2Key(9901L, key))).as("预热已写 L2").isTrue();
-        publisher.publish(key);
-        assertThat(awaitKeyGone(l2Key(9901L, key), 10000L)).as("广播后 L2 键必须消失").isTrue();
-        awaitInt(() -> paramApi.getInt(key, -1), 8888888, 10000L);
+        try {
+            jdbc().update("update eaio_platform.param set param_value = '8888888' where param_key = ?"
+                    + " and param_level = 'SYSTEM'", key);
+            assertThat(paramApi.getInt(key, -1)).as("未广播前 L1 命中：仍读缓存值").isEqualTo(24);
+
+            // 广播的效果必须两层都发生：先证明 L2 里真有这个键（否则"没命中"可能只是没写 L2），
+            // 再断言两个独立 resolver 的 L1 都被清掉——不然无法证明跨实例失效。
+            assertThat(redisTemplate.hasKey(l2Key(9901L, key))).as("预热已写 L2").isTrue();
+            long broadcastStarted = System.nanoTime();
+            publisher.publish(key);
+            assertThat(awaitKeyGone(l2Key(9901L, key), 1000L)).as("广播后 L2 键必须消失").isTrue();
+            awaitInt(() -> paramApi.getInt(key, -1), 8888888, 1000L);
+            awaitInt(() -> Integer.parseInt(secondaryResolver.resolve(key, secondaryContext).orElseThrow().value()),
+                    8888888, 1000L);
+            long broadcastMillis = (System.nanoTime() - broadcastStarted + 999_999L) / 1_000_000L;
+            assertThat(broadcastMillis).as("双实例参数热更新传播耗时").isLessThanOrEqualTo(1000L);
+        } finally {
+            secondarySubscriber.stop();
+            secondarySubscriber.destroy();
+        }
 
         jdbc().update("update eaio_platform.param set param_value = '24' where param_key = ?"
                 + " and param_level = 'SYSTEM'", key);
